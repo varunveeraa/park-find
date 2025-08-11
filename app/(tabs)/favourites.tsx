@@ -163,7 +163,7 @@ export default function FavouritesScreen() {
                   styles.statusText,
                   item.isOccupied ? styles.occupiedText : styles.availableText
                 ]}>
-                  {item.isOccupied ? 'Occupied' : 'Available'}
+                  {item.isOccupied ? 'Not Available' : 'Available'}
                 </Text>
               </View>
             </View>

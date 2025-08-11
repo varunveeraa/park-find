@@ -320,7 +320,7 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
   };
 
   const getMarkerColor = (isOccupied: boolean): string => {
-    return isOccupied ? '#FF6B6B' : '#4ECDC4'; // Red for occupied, teal for available
+    return isOccupied ? '#FF0000' : '#00FF00'; // Red for occupied, green for available
   };
 
   const handleManualRefresh = () => {
@@ -449,7 +449,24 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
       recognitionRef.current = null;
 
       if (event.error !== 'aborted') {
-        Alert.alert('Speech Error', `Error: ${event.error}. Please try again.`);
+        let errorMessage = 'Please try again.';
+        switch (event.error) {
+          case 'network':
+            errorMessage = 'Network error. Please check your internet connection and try again.';
+            break;
+          case 'not-allowed':
+            errorMessage = 'Microphone access denied. Please allow microphone access in your browser settings.';
+            break;
+          case 'no-speech':
+            errorMessage = 'No speech detected. Please try speaking again.';
+            break;
+          case 'audio-capture':
+            errorMessage = 'Microphone not available. Please check your microphone connection.';
+            break;
+          default:
+            errorMessage = `Error: ${event.error}. Please try again.`;
+        }
+        Alert.alert('Speech Recognition Error', errorMessage);
       }
     };
 
@@ -718,13 +735,14 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
   }, [markersWithDistances, searchQuery, filterType, signTypeFilter, hoursFilter, sortType, userLocation]);
 
   const generateMapHTML = () => {
-    const markersData = markers.map(marker => ({
+    const markersData = markersWithDistances.map(marker => ({
       id: marker.id,
       lat: marker.coordinate.latitude,
       lng: marker.coordinate.longitude,
       title: marker.title,
       description: marker.description,
-      color: marker.isOccupied ? '#FF6B6B' : '#4ECDC4',
+      color: marker.isOccupied ? '#FF0000' : '#00FF00',
+      isOccupied: marker.isOccupied,
       restriction: marker.currentRestriction || 'No restriction data',
       isRestricted: marker.isRestricted || false,
       streetAddress: marker.streetAddress || 'Address not available',
@@ -785,8 +803,8 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
           .legend { margin-top: 10px; }
           .legend-item { display: flex; align-items: center; margin: 5px 0; }
           .legend-color { width: 20px; height: 20px; border-radius: 50%; margin-right: 10px; }
-          .available { background-color: #4ECDC4; }
-          .occupied { background-color: #FF6B6B; }
+          .available { background-color: #00FF00; }
+          .occupied { background-color: #FF0000; }
           .refresh-btn {
             background: #4ECDC4;
             color: white;
@@ -804,9 +822,9 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
         <div id="map"></div>
         <div class="info-panel">
           <h3>Melbourne Parking Sensors</h3>
-          <p>Total sensors: ${markers.length}</p>
-          <p>Available: ${markers.filter(m => !m.isOccupied).length}</p>
-          <p>Occupied: ${markers.filter(m => m.isOccupied).length}</p>
+          <p>Total sensors: ${markersWithDistances.length}</p>
+          <p>Available: ${markersWithDistances.filter(m => !m.isOccupied).length}</p>
+          <p>Not Available: ${markersWithDistances.filter(m => m.isOccupied).length}</p>
           <div class="legend">
             <div class="legend-item">
               <div class="legend-color available"></div>
@@ -814,7 +832,7 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
             </div>
             <div class="legend-item">
               <div class="legend-color occupied"></div>
-              <span>Occupied</span>
+              <span>Not Available</span>
             </div>
           </div>
           <button class="refresh-btn" onclick="window.location.reload()">Refresh Data</button>
@@ -854,7 +872,7 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
                 '<p style="margin: 5px 0;"><strong>📍 Location:</strong><br>' + markerData.streetAddress + '</p>' +
                 '<p style="margin: 5px 0;"><strong>🅿️ Restriction:</strong><br>' + markerData.restriction + '</p>' +
                 '<p style="margin: 5px 0;"><strong>📊 Status:</strong><br>' +
-                (markerData.isRestricted ? '<span style="color: #e74c3c;">⏰ Time Limited</span>' : '<span style="color: #27ae60;">✅ No Active Restrictions</span>') +
+                (markerData.isOccupied ? '<span style="color: #FF0000;">❌ Not Available</span>' : '<span style="color: #00FF00;">✅ Available</span>') +
                 '</p>' +
                 '<p style="margin: 5px 0; font-size: 12px; color: #7f8c8d;">Last updated: ' + new Date().toLocaleTimeString() + '</p>' +
                 '<div style="margin-top: 15px; text-align: center;">' +
@@ -881,8 +899,8 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
             legend.onAdd = function (map) {
               const div = L.DomUtil.create('div', 'info legend');
               div.innerHTML = '<h4>Parking Status</h4>' +
-                '<i style="background: #4ECDC4; width: 18px; height: 18px; border-radius: 50%; display: inline-block; margin-right: 8px;"></i> Available<br>' +
-                '<i style="background: #FF6B6B; width: 18px; height: 18px; border-radius: 50%; display: inline-block; margin-right: 8px;"></i> Occupied';
+                '<i style="background: #00FF00; width: 18px; height: 18px; border-radius: 50%; display: inline-block; margin-right: 8px;"></i> Available<br>' +
+                '<i style="background: #FF0000; width: 18px; height: 18px; border-radius: 50%; display: inline-block; margin-right: 8px;"></i> Not Available';
               div.style.background = 'white';
               div.style.padding = '10px';
               div.style.borderRadius = '5px';
@@ -901,10 +919,10 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
 
   // Generate map HTML when markers or selected marker changes
   useEffect(() => {
-    if (markers.length > 0) {
+    if (markersWithDistances.length > 0) {
       setMapHtml(generateMapHTML());
     }
-  }, [markers, selectedMarker]);
+  }, [markersWithDistances, selectedMarker]);
 
   if (loading && markers.length === 0) {
     return (
@@ -1158,7 +1176,7 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
                             {marker.isDistanceEstimate && ' ~'}
                           </Text>
                           <Text style={styles.drivingTimeText}>
-                            � {formatDrivingTime(
+                            🚗 {formatDrivingTime(
                               marker.drivingTimeFromUser || calculateDrivingTime(marker.distanceFromUser)
                             )}
                             {marker.distanceCalculationMethod === 'routing' && ' 🗺️'}
@@ -1173,7 +1191,7 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
                           marker.isOccupied ? styles.occupiedBadge : styles.availableBadge
                         ]}>
                           <Text style={styles.statusLabel}>
-                            {marker.isOccupied ? 'OCCUPIED' : 'AVAILABLE'}
+                            {marker.isOccupied ? 'NOT AVAILABLE' : 'AVAILABLE'}
                           </Text>
                         </View>
                         <TouchableOpacity
