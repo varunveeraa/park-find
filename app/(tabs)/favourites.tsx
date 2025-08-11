@@ -1,4 +1,6 @@
 import { IconSymbol } from '@/components/ui/IconSymbol';
+import { Colors } from '@/constants/Colors';
+import { useTheme } from '@/src/contexts/ThemeContext';
 import { FavoriteSpot, favoritesService } from '@/src/services/database/favoritesService';
 import { webDatabaseService } from '@/src/services/database/webDatabaseService';
 import React, { useEffect, useState } from 'react';
@@ -16,6 +18,8 @@ import {
 } from 'react-native';
 
 export default function FavouritesScreen() {
+  const { colorScheme } = useTheme();
+  const colors = Colors[colorScheme];
   const [favourites, setFavourites] = useState<FavoriteSpot[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -114,6 +118,8 @@ export default function FavouritesScreen() {
     }
   };
 
+  const styles = createStyles(colors);
+
   const renderFavouriteItem = (item: FavoriteSpot) => (
     <View key={item.id} style={styles.favouriteCard}>
       {/* Status Bar */}
@@ -202,7 +208,10 @@ export default function FavouritesScreen() {
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+        <StatusBar
+          barStyle={colorScheme === 'dark' ? 'light-content' : 'dark-content'}
+          backgroundColor={colors.background}
+        />
         <View style={styles.loadingContainer}>
           <Text style={styles.loadingText}>Loading favourites...</Text>
         </View>
@@ -212,7 +221,10 @@ export default function FavouritesScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+      <StatusBar
+        barStyle={colorScheme === 'dark' ? 'light-content' : 'dark-content'}
+        backgroundColor={colors.background}
+      />
       
       <View style={styles.header}>
         <View style={styles.titleContainer}>
@@ -255,10 +267,10 @@ export default function FavouritesScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: colors.backgroundSecondary,
   },
   loadingContainer: {
     flex: 1,
@@ -267,16 +279,16 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     fontSize: 16,
-    color: '#6c757d',
+    color: colors.textSecondary,
   },
   header: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.headerBackground,
     padding: 20,
     paddingTop: 10,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    shadowColor: '#000',
+    shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -288,21 +300,21 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#2c3e50',
+    color: colors.text,
     marginBottom: 4,
   },
   subtitle: {
     fontSize: 16,
-    color: '#7f8c8d',
+    color: colors.textSecondary,
   },
   clearAllButton: {
-    backgroundColor: '#e74c3c',
+    backgroundColor: colors.error,
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 8,
   },
   clearAllText: {
-    color: '#fff',
+    color: colors.buttonText,
     fontSize: 14,
     fontWeight: '600',
   },
@@ -314,23 +326,23 @@ const styles = StyleSheet.create({
   },
   countText: {
     fontSize: 14,
-    color: '#6c757d',
+    color: colors.textSecondary,
     marginBottom: 16,
     textAlign: 'center',
   },
   favouriteCard: {
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.cardBackground,
     borderRadius: 20,
     marginBottom: 20,
     marginHorizontal: 4,
-    shadowColor: '#000',
+    shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.12,
     shadowRadius: 24,
     elevation: 8,
     overflow: 'hidden',
     borderWidth: 0.5,
-    borderColor: 'rgba(0,0,0,0.05)',
+    borderColor: colors.border,
   },
   statusBar: {
     height: 4,

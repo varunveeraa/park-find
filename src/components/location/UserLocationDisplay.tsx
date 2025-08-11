@@ -1,6 +1,8 @@
+import { Colors } from '@/constants/Colors';
 import * as Location from 'expo-location';
 import React, { useCallback, useEffect, useState } from 'react';
 import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useTheme } from '../../contexts/ThemeContext';
 
 interface UserLocationDisplayProps {
   onLocationUpdate?: (location: Location.LocationObject | null) => void;
@@ -11,6 +13,10 @@ export const UserLocationDisplay: React.FC<UserLocationDisplayProps> = ({
   onLocationUpdate,
   showRefreshButton = true,
 }) => {
+  const { colorScheme } = useTheme();
+  const colors = Colors[colorScheme];
+  const styles = createStyles(colors);
+
   const [userLocation, setUserLocation] = useState<Location.LocationObject | null>(null);
   const [locationPermission, setLocationPermission] = useState<Location.PermissionStatus | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -140,7 +146,7 @@ export const UserLocationDisplay: React.FC<UserLocationDisplayProps> = ({
             disabled={isLoading}
           >
             <Text style={styles.refreshButtonText}>
-              {isLoading ? '⟳' : '🔄'}
+              {isLoading ? '⟳' : '↻'}
             </Text>
           </TouchableOpacity>
         )}
@@ -149,22 +155,21 @@ export const UserLocationDisplay: React.FC<UserLocationDisplayProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
   container: {
-    backgroundColor: '#fff',
-    marginHorizontal: 16,
-    marginBottom: 12,
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    backgroundColor: colors.backgroundSecondary,
+    marginBottom: 6,
+    borderRadius: 8,
+    shadowColor: colors.shadow,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   locationContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
+    padding: 8,
   },
   locationInfo: {
     flex: 1,
@@ -172,7 +177,7 @@ const styles = StyleSheet.create({
   locationLabel: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#6c757d',
+    color: colors.textSecondary,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 4,
@@ -180,12 +185,12 @@ const styles = StyleSheet.create({
   locationText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#2c3e50',
+    color: colors.text,
     marginBottom: 2,
   },
   accuracyText: {
     fontSize: 12,
-    color: '#7f8c8d',
+    color: colors.textSecondary,
   },
   refreshButton: {
     backgroundColor: '#3498db',

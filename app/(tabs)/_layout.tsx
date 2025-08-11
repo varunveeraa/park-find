@@ -6,11 +6,11 @@ import { HapticTab } from '@/components/HapticTab';
 import { IconSymbol } from '@/components/ui/IconSymbol';
 import TabBarBackground from '@/components/ui/TabBarBackground';
 import { Colors } from '@/constants/Colors';
-import { useColorScheme } from '@/hooks/useColorScheme';
+import { useTheme } from '@/src/contexts/ThemeContext';
 import { useWebsiteLogging } from '@/src/hooks/useWebsiteLogging';
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
+  const { colorScheme } = useTheme();
 
   // Initialize website logging
   useWebsiteLogging();

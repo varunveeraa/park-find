@@ -1,7 +1,9 @@
+import { Colors } from '@/constants/Colors';
 import { FavoriteNameModal } from '@/src/components/favorites/FavoriteNameModal';
 import * as Location from 'expo-location';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, AppState, Dimensions, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { useTheme } from '../../contexts/ThemeContext';
 import { parkingSensorsApi } from '../../services/api/parkingSensorsApi';
 import FavoritesService, { favoritesService } from '../../services/database/favoritesService';
 import { loggingService } from '../../services/database/loggingService';
@@ -9,6 +11,7 @@ import { webDatabaseService } from '../../services/database/webDatabaseService';
 import { ApiError, EnhancedParkingSensorMarker } from '../../types';
 import { calculateDistance, calculateDrivingTime, formatDistance, formatDrivingTime } from '../../utils/distance';
 import { UserLocationDisplay } from '../location/UserLocationDisplay';
+import { ThemeToggleButton } from '../ui/ThemeToggleButton';
 
 interface Region {
   latitude: number;
@@ -37,6 +40,10 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
   autoRefresh = true,
   refreshInterval = 120000, // 2 minutes
 }) => {
+  const { colorScheme } = useTheme();
+  const colors = Colors[colorScheme];
+  const styles = createStyles(colors);
+
   const [markers, setMarkers] = useState<EnhancedParkingSensorMarker[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -927,7 +934,7 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
   if (loading && markers.length === 0) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#4ECDC4" />
+        <ActivityIndicator size="large" color={colors.buttonPrimary} />
         <Text style={styles.loadingText}>Loading parking data...</Text>
       </View>
     );
@@ -942,9 +949,12 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
             <Text style={styles.title}>🅿️ Park Find</Text>
             <Text style={styles.subtitle}>Find available parking spots in Melbourne</Text>
           </View>
-          <TouchableOpacity style={styles.refreshButton} onPress={handleManualRefresh}>
-            <Text style={styles.refreshButtonText}>🔄</Text>
-          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            <ThemeToggleButton size={20} />
+            <TouchableOpacity style={styles.refreshButton} onPress={handleManualRefresh}>
+              <Text style={styles.refreshButtonText}>↻</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
 
@@ -971,54 +981,56 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
             </Text>
           </View>
 
-          {/* User Location Display */}
-          <UserLocationDisplay
-            onLocationUpdate={handleLocationUpdate}
-            showRefreshButton={true}
-          />
+          {/* Utility Controls Container */}
+          <View style={styles.utilityControlsContainer}>
+            {/* User Location Display */}
+            <UserLocationDisplay
+              onLocationUpdate={handleLocationUpdate}
+              showRefreshButton={true}
+            />
 
-          {/* Routing Toggle */}
-          {routingStats && (
-            <View style={styles.routingContainer}>
-              <View style={styles.routingToggleContainer}>
-                <Text style={styles.routingLabel}>
-                  🗺️ Road Routing {routingStats.apiConfigured ? '' : '(API key required)'}
-                </Text>
-                <TouchableOpacity
-                  style={[
-                    styles.routingToggle,
-                    useRouting && routingStats.enabled ? styles.routingToggleActive : styles.routingToggleInactive
-                  ]}
-                  onPress={() => setUseRouting(!useRouting)}
-                  disabled={!routingStats.enabled}
-                >
-                  <Text style={styles.routingToggleText}>
-                    {useRouting && routingStats.enabled ? 'ON' : 'OFF'}
+            {/* Routing Toggle */}
+            {routingStats && (
+              <View style={styles.routingContainer}>
+                <View style={styles.routingToggleContainer}>
+                  <Text style={styles.routingLabel}>
+                    🗺️ Road Routing {routingStats.apiConfigured ? '' : '(API key required)'}
                   </Text>
-                </TouchableOpacity>
-              </View>
-              {distanceCalculating && (
-                <View style={styles.calculatingContainer}>
-                  <ActivityIndicator size="small" color="#3498db" />
-                  <Text style={styles.calculatingText}>Calculating routes...</Text>
+                  <TouchableOpacity
+                    style={[
+                      styles.routingToggle,
+                      useRouting && routingStats.enabled ? styles.routingToggleActive : styles.routingToggleInactive
+                    ]}
+                    onPress={() => setUseRouting(!useRouting)}
+                    disabled={!routingStats.enabled}
+                  >
+                    <Text style={styles.routingToggleText}>
+                      {useRouting && routingStats.enabled ? 'ON' : 'OFF'}
+                    </Text>
+                  </TouchableOpacity>
                 </View>
-              )}
-              {useRouting && routingStats.enabled && (
-                <Text style={styles.routingHelpText}>
-                  Using road routing for accurate driving distances and times
-                </Text>
-              )}
-            </View>
-          )}
+                {distanceCalculating && (
+                  <View style={styles.calculatingContainer}>
+                    <ActivityIndicator size="small" color={colors.info} />
+                    <Text style={styles.calculatingText}>Calculating routes...</Text>
+                  </View>
+                )}
+                {useRouting && routingStats.enabled && (
+                  <Text style={styles.routingHelpText}>
+                    Using road routing for accurate driving distances and times
+                  </Text>
+                )}
+              </View>
+            )}
 
-          {/* Search Bar */}
-          <View style={styles.searchContainer}>
+            {/* Search Bar */}
+            <View style={styles.searchContainer}>
             <View style={styles.searchInputContainer}>
               <Text style={styles.searchIcon}>🔍</Text>
               <TextInput
                 style={styles.searchInput}
                 placeholder="Search by street name, zone, or location..."
-                placeholderTextColor="#95a5a6"
+                placeholderTextColor={colors.placeholder}
                 value={searchQuery}
                 onChangeText={setSearchQuery}
                 autoCapitalize="words"
@@ -1138,6 +1150,8 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
               </TouchableOpacity>
             )}
           </View>
+          </View>
+
           <ScrollView
             style={styles.sensorList}
             showsVerticalScrollIndicator={false}
@@ -1299,7 +1313,7 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
 
       {loading && markers.length > 0 && (
         <View style={styles.refreshIndicator}>
-          <ActivityIndicator size="small" color="#4ECDC4" />
+          <ActivityIndicator size="small" color={colors.buttonPrimary} />
           <Text style={styles.refreshText}>Updating...</Text>
         </View>
       )}
@@ -1335,10 +1349,10 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: colors.backgroundTertiary,
   },
   containerVertical: {
     flexDirection: 'column',
@@ -1347,7 +1361,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   listSection: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.background,
     position: 'relative',
     zIndex: 10,
   },
@@ -1357,10 +1371,10 @@ const styles = StyleSheet.create({
   leftHalf: {
     flex: 0.3, // 30% of screen width
     borderRightWidth: 2,
-    borderRightColor: '#e0e0e0',
+    borderRightColor: colors.border,
   },
   mapSection: {
-    backgroundColor: '#f8f9fa',
+    backgroundColor: colors.backgroundSecondary,
     padding: 16,
   },
   bottomHalf: {
@@ -1374,11 +1388,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: colors.headerBackground,
     padding: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-    shadowColor: '#000',
+    borderBottomColor: colors.border,
+    shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -1387,43 +1401,69 @@ const styles = StyleSheet.create({
   titleContainer: {
     flex: 1,
   },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
   title: {
     fontSize: 26,
     fontWeight: 'bold',
-    color: '#2c3e50',
+    color: colors.text,
     marginBottom: 2,
   },
   subtitle: {
     fontSize: 14,
-    color: '#7f8c8d',
+    color: colors.textSecondary,
     fontWeight: '500',
   },
   mapHeader: {
     paddingBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    borderBottomColor: colors.border,
     marginBottom: 12,
-    backgroundColor: '#fff',
+    backgroundColor: colors.cardBackground,
     borderRadius: 8,
     padding: 12,
   },
   mapTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#2c3e50',
+    color: colors.text,
     textAlign: 'center',
   },
 
   sensorListContainer: {
     flex: 1,
-    padding: 16,
-    backgroundColor: '#f8f9fa',
+    padding: 6,
+    backgroundColor: colors.backgroundSecondary,
     minHeight: 0, // Important for ScrollView in flex container
     position: 'relative',
     zIndex: 1,
   },
+  utilityControlsContainer: {
+    backgroundColor: colors.cardBackground,
+    marginHorizontal: 4,
+    marginBottom: 8,
+    borderRadius: 12,
+    padding: 8,
+    shadowColor: colors.shadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
   listHeader: {
-    marginBottom: 16,
+    backgroundColor: colors.cardBackground,
+    marginHorizontal: 6,
+    marginBottom: 6,
+    borderRadius: 8,
+    padding: 6,
+    shadowColor: colors.shadow,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 2,
   },
   listTitleContainer: {
     flexDirection: 'row',
@@ -1431,49 +1471,48 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   countBadge: {
-    backgroundColor: '#27ae60',
-    borderRadius: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    marginLeft: 8,
+    backgroundColor: colors.success,
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    marginLeft: 6,
   },
   countBadgeText: {
-    color: 'white',
-    fontSize: 12,
+    color: colors.buttonText,
+    fontSize: 10,
     fontWeight: 'bold',
   },
   sensorList: {
     flex: 1,
   },
   searchContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#f8f9fa',
+    paddingVertical: 4,
+    backgroundColor: 'transparent',
   },
   searchInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    backgroundColor: colors.inputBackground,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    shadowColor: colors.shadow,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 2,
     borderWidth: 1,
-    borderColor: '#e9ecef',
+    borderColor: colors.inputBorder,
   },
   searchIcon: {
     fontSize: 16,
     marginRight: 12,
-    color: '#6c757d',
+    color: colors.placeholder,
   },
   searchInput: {
     flex: 1,
     fontSize: 16,
-    color: '#2c3e50',
+    color: colors.inputText,
     paddingVertical: 0,
   },
   speechButton: {
@@ -1599,16 +1638,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   filtersContainer: {
-    backgroundColor: '#fff',
-    marginHorizontal: 8,
-    marginBottom: 16,
-    borderRadius: 12,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    backgroundColor: 'transparent',
+    marginTop: 6,
+    borderRadius: 8,
+    padding: 6,
     zIndex: 100,
   },
   dropdownsRow: {
@@ -1624,16 +1657,16 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   dropdownButton: {
-    backgroundColor: '#f8f9fa',
-    borderRadius: 8,
-    padding: 12,
+    backgroundColor: colors.buttonSecondary,
+    borderRadius: 6,
+    padding: 8,
     borderWidth: 1,
-    borderColor: '#e9ecef',
-    minHeight: 48,
+    borderColor: colors.borderLight,
+    minHeight: 36,
   },
   dropdownLabel: {
     fontSize: 11,
-    color: '#6c757d',
+    color: colors.textSecondary,
     fontWeight: '600',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
@@ -1646,13 +1679,13 @@ const styles = StyleSheet.create({
   },
   dropdownValueText: {
     fontSize: 14,
-    color: '#2c3e50',
+    color: colors.text,
     fontWeight: '500',
     flex: 1,
   },
   dropdownArrow: {
     fontSize: 12,
-    color: '#6c757d',
+    color: colors.textSecondary,
     marginLeft: 8,
   },
   dropdownMenu: {
@@ -1660,11 +1693,11 @@ const styles = StyleSheet.create({
     top: '100%',
     left: 0,
     right: 0,
-    backgroundColor: '#fff',
+    backgroundColor: colors.cardBackground,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#e9ecef',
-    shadowColor: '#000',
+    borderColor: colors.borderLight,
+    shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.25,
     shadowRadius: 16,
@@ -1677,18 +1710,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#f1f3f4',
+    borderBottomColor: colors.border,
   },
   dropdownOptionSelected: {
-    backgroundColor: '#e3f2fd',
+    backgroundColor: colors.backgroundSecondary,
   },
   dropdownOptionText: {
     fontSize: 14,
-    color: '#2c3e50',
+    color: colors.text,
     fontWeight: '500',
   },
   dropdownOptionTextSelected: {
-    color: '#1976d2',
+    color: colors.tint,
     fontWeight: '600',
   },
   clearAllButton: {
@@ -1708,10 +1741,10 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: colors.cardBackground,
     borderRadius: 12,
     padding: 32,
-    shadowColor: '#000',
+    shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -1719,52 +1752,57 @@ const styles = StyleSheet.create({
   },
   mapPlaceholderText: {
     fontSize: 18,
-    color: '#2c3e50',
+    color: colors.text,
     textAlign: 'center',
     marginBottom: 8,
     fontWeight: '600',
   },
   mapPlaceholderSubtext: {
     fontSize: 14,
-    color: '#7f8c8d',
+    color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 20,
   },
   sensorListTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#2c3e50',
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text,
+    letterSpacing: 0.3,
   },
   lastUpdateText: {
-    fontSize: 12,
-    color: '#7f8c8d',
+    fontSize: 11,
+    color: colors.textSecondary,
+    fontWeight: '500',
+    marginTop: 4,
   },
   searchResultsText: {
     fontSize: 12,
-    color: '#6c757d',
+    color: colors.textSecondary,
     fontStyle: 'italic',
     marginTop: 4,
     marginBottom: 8,
   },
   parkingSpot: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
-    elevation: 6,
-    borderLeftWidth: 6,
-    borderLeftColor: '#27ae60',
+    backgroundColor: colors.cardBackground,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 6,
+    marginHorizontal: 12,
+    shadowColor: colors.shadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 3,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.available,
   },
   parkingSpotSelected: {
-    borderLeftColor: '#e74c3c',
+    borderLeftColor: colors.error,
     borderWidth: 2,
-    borderColor: '#e74c3c',
-    backgroundColor: '#fdf2f2',
-    shadowColor: '#e74c3c',
+    borderColor: colors.error,
+    backgroundColor: colors.backgroundSecondary,
+    shadowColor: colors.error,
     shadowOpacity: 0.2,
   },
   streetHeader: {
@@ -1778,11 +1816,11 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   streetName: {
-    fontSize: 22,
+    fontSize: 16,
     fontWeight: 'bold',
-    color: '#1a1a1a',
-    lineHeight: 28,
-    marginBottom: 4,
+    color: colors.text,
+    lineHeight: 20,
+    marginBottom: 2,
   },
   distanceContainer: {
     flexDirection: 'row',
@@ -1790,19 +1828,19 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   distanceText: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '600',
-    color: '#3498db',
+    color: colors.info,
   },
   walkingTimeText: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '500',
-    color: '#7f8c8d',
+    color: colors.textSecondary,
   },
   drivingTimeText: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '500',
-    color: '#7f8c8d',
+    color: colors.textSecondary,
   },
   headerRight: {
     alignItems: 'flex-end',
@@ -1825,43 +1863,44 @@ const styles = StyleSheet.create({
     // White heart emoji already colored
   },
   statusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 3,
-    marginBottom: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
+    marginBottom: 2,
   },
   availableBadge: {
-    backgroundColor: '#27ae60',
-    shadowColor: '#27ae60',
+    backgroundColor: colors.available,
+    shadowColor: colors.available,
   },
   occupiedBadge: {
-    backgroundColor: '#e74c3c',
-    shadowColor: '#e74c3c',
+    backgroundColor: colors.occupied,
+    shadowColor: colors.occupied,
   },
   statusLabel: {
-    color: '#fff',
-    fontSize: 12,
+    color: colors.buttonText,
+    fontSize: 10,
     fontWeight: 'bold',
-    letterSpacing: 1,
+    letterSpacing: 0.5,
   },
   clickHint: {
-    fontSize: 10,
-    color: '#95a5a6',
+    fontSize: 9,
+    color: colors.textSecondary,
     fontStyle: 'italic',
   },
   restrictionSection: {
     marginBottom: 12,
   },
   signInfoContainer: {
-    backgroundColor: '#f8f9fa',
-    borderRadius: 12,
-    padding: 16,
-    borderLeftWidth: 4,
-    borderLeftColor: '#3498db',
+    backgroundColor: colors.backgroundSecondary,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.info,
   },
   restrictionRow: {
     flexDirection: 'row',
@@ -1872,24 +1911,24 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   signTypeBadge: {
-    backgroundColor: '#3498db',
-    borderRadius: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    shadowColor: '#3498db',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 3,
-    minWidth: 60,
+    backgroundColor: colors.info,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    shadowColor: colors.info,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
+    minWidth: 40,
     alignItems: 'center',
     flex: 0.8,
   },
   signTypeText: {
-    color: '#fff',
-    fontSize: 16,
+    color: colors.buttonText,
+    fontSize: 12,
     fontWeight: 'bold',
-    letterSpacing: 1,
+    letterSpacing: 0.5,
   },
   timeSection: {
     flex: 2,
@@ -1897,17 +1936,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
   timeContext: {
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: '600',
-    color: '#7f8c8d',
+    color: colors.textSecondary,
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 2,
+    letterSpacing: 0.3,
+    marginBottom: 1,
   },
   timeValue: {
-    fontSize: 15,
+    fontSize: 12,
     fontWeight: '700',
-    color: '#2c3e50',
+    color: colors.text,
     textAlign: 'center',
   },
   daysSection: {
@@ -1916,68 +1955,68 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
   daysContext: {
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: '600',
-    color: '#7f8c8d',
+    color: colors.textSecondary,
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 2,
+    letterSpacing: 0.3,
+    marginBottom: 1,
   },
   daysValue: {
-    fontSize: 15,
+    fontSize: 12,
     fontWeight: '700',
-    color: '#34495e',
+    color: colors.text,
     textAlign: 'center',
   },
   noRestrictionText: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#3498db',
-    backgroundColor: '#f8f9fa',
+    color: colors.info,
+    backgroundColor: colors.backgroundSecondary,
     padding: 16,
     borderRadius: 12,
     textAlign: 'center',
     letterSpacing: 0.5,
     borderLeftWidth: 4,
-    borderLeftColor: '#3498db',
+    borderLeftColor: colors.info,
   },
   streetDetails: {
-    fontSize: 14,
-    color: '#7f8c8d',
+    fontSize: 11,
+    color: colors.textSecondary,
     fontStyle: 'italic',
-    marginTop: 8,
-    paddingTop: 12,
+    marginTop: 4,
+    paddingTop: 6,
     borderTopWidth: 1,
-    borderTopColor: '#ecf0f1',
+    borderTopColor: colors.border,
   },
   noAvailableSpots: {
     alignItems: 'center',
     padding: 32,
-    backgroundColor: '#fff',
+    backgroundColor: colors.cardBackground,
     borderRadius: 12,
     marginTop: 20,
   },
   noAvailableSpotsText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#e74c3c',
+    color: colors.error,
     marginBottom: 4,
   },
   noAvailableSpotsSubtext: {
     fontSize: 14,
-    color: '#7f8c8d',
+    color: colors.textSecondary,
     textAlign: 'center',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
+    backgroundColor: colors.backgroundTertiary,
   },
   loadingText: {
     marginTop: 10,
     fontSize: 16,
-    color: '#666',
+    color: colors.textSecondary,
   },
   refreshIndicator: {
     position: 'absolute',
@@ -1998,7 +2037,7 @@ const styles = StyleSheet.create({
   refreshText: {
     marginLeft: 8,
     fontSize: 12,
-    color: '#666',
+    color: colors.textSecondary,
   },
   errorContainer: {
     position: 'absolute',
@@ -2015,20 +2054,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   refreshButton: {
-    backgroundColor: '#3498db',
+    backgroundColor: colors.buttonPrimary,
     width: 44,
     height: 44,
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
+    shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
     shadowRadius: 4,
     elevation: 4,
   },
   refreshButtonText: {
-    color: 'white',
+    color: colors.buttonText,
     fontSize: 18,
   },
   lastUpdateContainer: {
@@ -2068,24 +2107,23 @@ const styles = StyleSheet.create({
   noDataText: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#666',
+    color: colors.textSecondary,
     textAlign: 'center',
     marginBottom: 8,
   },
   noDataSubtext: {
     fontSize: 14,
-    color: '#999',
+    color: colors.textSecondary,
     textAlign: 'center',
   },
   // Routing styles
   routingContainer: {
-    backgroundColor: '#f8f9fa',
-    padding: 12,
-    marginHorizontal: 16,
-    marginVertical: 8,
+    backgroundColor: colors.backgroundSecondary,
+    padding: 8,
+    marginVertical: 6,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#e9ecef',
+    borderColor: colors.borderLight,
   },
   routingToggleContainer: {
     flexDirection: 'row',
@@ -2096,7 +2134,7 @@ const styles = StyleSheet.create({
   routingLabel: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#2c3e50',
+    color: colors.text,
     flex: 1,
   },
   routingToggle: {
