@@ -17,6 +17,7 @@ export interface FavoriteSpot {
   longitude: number;
   zoneNumber?: string;
   kerbsideId?: string;
+  customName?: string;
   dateAdded: string;
   lastUpdated: string;
 }
@@ -31,6 +32,7 @@ export interface FavoriteSpotInput {
   longitude: number;
   zoneNumber?: string;
   kerbsideId?: string;
+  customName?: string;
 }
 
 class FavoritesService {
@@ -62,6 +64,7 @@ class FavoritesService {
           longitude: spot.longitude,
           zoneNumber: spot.zoneNumber || null,
           kerbsideId: spot.kerbsideId || null,
+          customName: spot.customName || null,
         };
         await webDatabaseService.put('favorites', favoriteData);
       } else {
@@ -111,6 +114,7 @@ class FavoritesService {
           longitude: row.longitude,
           zoneNumber: row.zoneNumber,
           kerbsideId: row.kerbsideId,
+          customName: row.customName,
           dateAdded: row.dateAdded,
           lastUpdated: row.lastUpdated,
         })).sort((a, b) => new Date(b.dateAdded).getTime() - new Date(a.dateAdded).getTime());

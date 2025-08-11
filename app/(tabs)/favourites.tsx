@@ -4,6 +4,7 @@ import { webDatabaseService } from '@/src/services/database/webDatabaseService';
 import React, { useEffect, useState } from 'react';
 import {
     Alert,
+    Linking,
     Platform,
     SafeAreaView,
     ScrollView,
@@ -91,36 +92,110 @@ export default function FavouritesScreen() {
     );
   };
 
-  const renderFavouriteItem = (item: FavouriteSpot) => (
+  const openDirections = async (item: FavoriteSpot) => {
+    try {
+      const googleMapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${item.latitude},${item.longitude}`;
+
+      if (Platform.OS === 'web') {
+        // For web, open in new tab
+        window.open(googleMapsUrl, '_blank');
+      } else {
+        // For mobile, use Linking
+        const supported = await Linking.canOpenURL(googleMapsUrl);
+        if (supported) {
+          await Linking.openURL(googleMapsUrl);
+        } else {
+          Alert.alert('Error', 'Unable to open directions. Please make sure you have Google Maps installed.');
+        }
+      }
+    } catch (error) {
+      console.error('Error opening directions:', error);
+      Alert.alert('Error', 'Unable to open directions.');
+    }
+  };
+
+  const renderFavouriteItem = (item: FavoriteSpot) => (
     <View key={item.id} style={styles.favouriteCard}>
-      <View style={styles.cardHeader}>
-        <View style={styles.titleContainer}>
-          <Text style={styles.cardTitle}>{item.title}</Text>
+      {/* Status Bar */}
+      <View style={[
+        styles.statusBar,
+        item.isOccupied ? styles.occupiedBar : styles.availableBar
+      ]} />
+
+      {/* Main Content */}
+      <View style={styles.cardMain}>
+        <View style={styles.cardLeft}>
+          {/* Status Indicator with Glow */}
           <View style={[
-            styles.statusBadge,
-            item.isOccupied ? styles.occupiedBadge : styles.availableBadge
+            styles.statusIndicator,
+            item.isOccupied ? styles.occupiedIndicator : styles.availableIndicator
           ]}>
-            <Text style={styles.statusText}>
-              {item.isOccupied ? 'OCCUPIED' : 'AVAILABLE'}
+            <View style={[
+              styles.statusGlow,
+              item.isOccupied ? styles.occupiedGlow : styles.availableGlow
+            ]}>
+              <Text style={styles.statusEmoji}>
+                {item.isOccupied ? '🚗' : '🅿️'}
+              </Text>
+            </View>
+          </View>
+
+          {/* Parking Info */}
+          <View style={styles.parkingInfo}>
+            <Text style={styles.locationText} numberOfLines={2}>
+              {item.customName || item.streetAddress}
+            </Text>
+            {item.customName && (
+              <Text style={styles.actualLocationText} numberOfLines={1}>
+                📍 {item.streetAddress}
+              </Text>
+            )}
+            <View style={styles.statusRow}>
+              <View style={[
+                styles.statusPill,
+                item.isOccupied ? styles.occupiedPill : styles.availablePill
+              ]}>
+                <View style={[
+                  styles.statusDot,
+                  item.isOccupied ? styles.occupiedDot : styles.availableDot
+                ]} />
+                <Text style={[
+                  styles.statusText,
+                  item.isOccupied ? styles.occupiedText : styles.availableText
+                ]}>
+                  {item.isOccupied ? 'Occupied' : 'Available'}
+                </Text>
+              </View>
+            </View>
+            <Text style={styles.restrictionText} numberOfLines={2}>
+              {item.restriction.replace(/Location:.*?\n/g, '').replace(/Status:.*?\n/g, '').replace(/Last updated:.*$/g, '').trim()}
             </Text>
           </View>
         </View>
-        <TouchableOpacity
-          style={styles.removeButton}
-          onPress={() => removeFavourite(item.id)}
-        >
-          <IconSymbol name="heart.fill" size={24} color="#e74c3c" />
-        </TouchableOpacity>
+
+        {/* Actions with Gradient */}
+        <View style={styles.cardActions}>
+          <TouchableOpacity
+            style={styles.directionsButton}
+            onPress={() => openDirections(item)}
+            activeOpacity={0.8}
+          >
+            <View style={styles.buttonGradient}>
+              <Text style={styles.directionsText}>Directions</Text>
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.removeButton}
+            onPress={() => removeFavourite(item.id)}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.removeIcon}>❤️</Text>
+          </TouchableOpacity>
+        </View>
       </View>
-      
-      <Text style={styles.cardAddress}>{item.streetAddress}</Text>
-      <Text style={styles.cardRestriction}>{item.restriction}</Text>
-      
-      <View style={styles.cardFooter}>
-        <Text style={styles.dateAdded}>
-          Added: {new Date(item.dateAdded).toLocaleDateString()}
-        </Text>
-      </View>
+
+      {/* Subtle Bottom Accent */}
+      <View style={styles.cardAccent} />
     </View>
   );
 
@@ -244,66 +319,202 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   favouriteCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    marginBottom: 20,
+    marginHorizontal: 4,
     shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 24,
+    elevation: 8,
+    overflow: 'hidden',
+    borderWidth: 0.5,
+    borderColor: 'rgba(0,0,0,0.05)',
+  },
+  statusBar: {
+    height: 4,
+    width: '100%',
+  },
+  availableBar: {
+    backgroundColor: '#10b981',
+  },
+  occupiedBar: {
+    backgroundColor: '#ef4444',
+  },
+  cardMain: {
+    flexDirection: 'row',
+    padding: 24,
+  },
+  cardLeft: {
+    flex: 1,
+    flexDirection: 'row',
+  },
+  statusIndicator: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 20,
+    position: 'relative',
+  },
+  availableIndicator: {
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+    borderWidth: 2,
+    borderColor: 'rgba(16, 185, 129, 0.2)',
+  },
+  occupiedIndicator: {
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    borderWidth: 2,
+    borderColor: 'rgba(239, 68, 68, 0.2)',
+  },
+  statusGlow: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  availableGlow: {
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    shadowColor: '#10b981',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  occupiedGlow: {
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    shadowColor: '#ef4444',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  statusEmoji: {
+    fontSize: 22,
+  },
+  parkingInfo: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  locationText: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#1f2937',
+    marginBottom: 4,
+    lineHeight: 22,
+  },
+  actualLocationText: {
+    fontSize: 13,
+    color: '#6b7280',
+    marginBottom: 8,
+    fontStyle: 'italic',
+  },
+  statusRow: {
+    marginBottom: 10,
+  },
+  statusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    alignSelf: 'flex-start',
+  },
+  availablePill: {
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.2)',
+  },
+  occupiedPill: {
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.2)',
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 8,
+  },
+  availableDot: {
+    backgroundColor: '#10b981',
+  },
+  occupiedDot: {
+    backgroundColor: '#ef4444',
+  },
+  statusText: {
+    fontSize: 13,
+    fontWeight: '600',
+    letterSpacing: 0.3,
+  },
+  availableText: {
+    color: '#059669',
+  },
+  occupiedText: {
+    color: '#dc2626',
+  },
+  restrictionText: {
+    fontSize: 14,
+    color: '#6b7280',
+    lineHeight: 20,
+    fontWeight: '400',
+  },
+  cardActions: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingLeft: 16,
+  },
+  directionsButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+    shadowColor: '#4285f4',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  buttonGradient: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    backgroundColor: '#4285f4',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  directionsText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  removeButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#ffffff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: 'rgba(239, 68, 68, 0.2)',
+    shadowColor: '#ef4444',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
-    elevation: 3,
+    elevation: 2,
   },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
+  removeIcon: {
+    fontSize: 20,
   },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#2c3e50',
-    marginBottom: 6,
-  },
-  statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  availableBadge: {
-    backgroundColor: '#27ae60',
-  },
-  occupiedBadge: {
-    backgroundColor: '#e74c3c',
-  },
-  statusText: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: 'bold',
-    letterSpacing: 0.5,
-  },
-  removeButton: {
-    padding: 4,
-  },
-  cardAddress: {
-    fontSize: 16,
-    color: '#34495e',
-    marginBottom: 8,
-  },
-  cardRestriction: {
-    fontSize: 14,
-    color: '#7f8c8d',
-    marginBottom: 12,
-  },
-  cardFooter: {
-    borderTopWidth: 1,
-    borderTopColor: '#ecf0f1',
-    paddingTop: 8,
-  },
-  dateAdded: {
-    fontSize: 12,
-    color: '#95a5a6',
+  cardAccent: {
+    height: 1,
+    backgroundColor: 'rgba(0,0,0,0.05)',
+    marginHorizontal: 24,
   },
   emptyContainer: {
     flex: 1,

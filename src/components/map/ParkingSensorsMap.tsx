@@ -1,3 +1,4 @@
+import { FavoriteNameModal } from '@/src/components/favorites/FavoriteNameModal';
 import * as Location from 'expo-location';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, AppState, Dimensions, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
@@ -62,6 +63,11 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
   const [showHoursDropdown, setShowHoursDropdown] = useState(false);
   const [showSortDropdown, setShowSortDropdown] = useState(false);
   const [favouriteIds, setFavouriteIds] = useState<Set<string>>(new Set());
+  const [showNameModal, setShowNameModal] = useState(false);
+  const [pendingFavorite, setPendingFavorite] = useState<EnhancedParkingSensorMarker | null>(null);
+  const [isListening, setIsListening] = useState(false);
+  const [speechSupported, setSpeechSupported] = useState(false);
+  const recognitionRef = useRef<any>(null);
 
   // Determine if we should use horizontal layout (web/tablet)
   const isWideScreen = screenData.width >= 768;
@@ -356,17 +362,113 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
         });
         Alert.alert('Removed', 'Parking spot removed from favourites');
       } else {
-        // Add to favourites
-        const favoriteInput = FavoritesService.markerToFavoriteInput(marker);
-        await favoritesService.addFavorite(favoriteInput);
-        setFavouriteIds(prev => new Set(prev).add(marker.id));
-        Alert.alert('Added', 'Parking spot added to favourites');
+        // Show modal to get custom name
+        setPendingFavorite(marker);
+        setShowNameModal(true);
       }
     } catch (error) {
       console.error('Error toggling favourite:', error);
       Alert.alert('Error', 'Failed to update favourites');
     }
   }, []);
+
+  // Handle saving favorite with custom name
+  const handleSaveFavorite = useCallback(async (customName: string) => {
+    if (!pendingFavorite) return;
+
+    try {
+      const favoriteInput = FavoritesService.markerToFavoriteInput(pendingFavorite);
+      if (customName.trim()) {
+        favoriteInput.customName = customName.trim();
+      }
+
+      await favoritesService.addFavorite(favoriteInput);
+      setFavouriteIds(prev => new Set(prev).add(pendingFavorite.id));
+
+      const displayName = customName.trim() || pendingFavorite.streetAddress || 'Parking spot';
+      Alert.alert('Added', `"${displayName}" added to favourites`);
+
+      setPendingFavorite(null);
+    } catch (error) {
+      console.error('Error adding favourite:', error);
+      Alert.alert('Error', 'Failed to add to favourites');
+    }
+  }, [pendingFavorite]);
+
+  // Handle modal close
+  const handleModalClose = useCallback(() => {
+    setShowNameModal(false);
+    setPendingFavorite(null);
+  }, []);
+
+  // Check speech recognition support
+  useEffect(() => {
+    if (Platform.OS === 'web') {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      setSpeechSupported(!!SpeechRecognition);
+    }
+  }, []);
+
+  // Speech recognition functionality
+  const toggleSpeechRecognition = useCallback(() => {
+    if (Platform.OS !== 'web' || !speechSupported) {
+      Alert.alert('Not Supported', 'Speech recognition is not supported on this device/browser.');
+      return;
+    }
+
+    // If already listening, stop
+    if (isListening && recognitionRef.current) {
+      recognitionRef.current.stop();
+      return;
+    }
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+    recognitionRef.current = recognition;
+
+    // Simple configuration
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = 'en-US';
+
+    recognition.onstart = () => {
+      console.log('Speech recognition started');
+      setIsListening(true);
+    };
+
+    recognition.onresult = (event: any) => {
+      console.log('Speech recognition result:', event);
+      const transcript = event.results[0][0].transcript;
+      console.log('Transcript:', transcript);
+      setSearchQuery(transcript.trim());
+    };
+
+    recognition.onerror = (event: any) => {
+      console.error('Speech recognition error:', event.error);
+      setIsListening(false);
+      recognitionRef.current = null;
+
+      if (event.error !== 'aborted') {
+        Alert.alert('Speech Error', `Error: ${event.error}. Please try again.`);
+      }
+    };
+
+    recognition.onend = () => {
+      console.log('Speech recognition ended');
+      setIsListening(false);
+      recognitionRef.current = null;
+    };
+
+    try {
+      recognition.start();
+      console.log('Starting speech recognition...');
+    } catch (error) {
+      console.error('Failed to start speech recognition:', error);
+      setIsListening(false);
+      recognitionRef.current = null;
+      Alert.alert('Error', 'Failed to start speech recognition.');
+    }
+  }, [speechSupported, isListening]);
 
   // Load favourites on component mount
   useEffect(() => {
@@ -746,6 +848,7 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
               markerObjects[markerData.id] = marker;
 
               // Simple popup for now to get map working
+              const googleMapsUrl = 'https://www.google.com/maps/dir/?api=1&destination=' + markerData.lat + ',' + markerData.lng;
               const popupContent = '<div style="min-width: 250px; font-family: Arial, sans-serif;">' +
                 '<h4 style="margin: 0 0 10px 0; color: #2c3e50;">🅿️ ' + markerData.title + '</h4>' +
                 '<p style="margin: 5px 0;"><strong>📍 Location:</strong><br>' + markerData.streetAddress + '</p>' +
@@ -754,6 +857,12 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
                 (markerData.isRestricted ? '<span style="color: #e74c3c;">⏰ Time Limited</span>' : '<span style="color: #27ae60;">✅ No Active Restrictions</span>') +
                 '</p>' +
                 '<p style="margin: 5px 0; font-size: 12px; color: #7f8c8d;">Last updated: ' + new Date().toLocaleTimeString() + '</p>' +
+                '<div style="margin-top: 15px; text-align: center;">' +
+                '<a href="' + googleMapsUrl + '" target="_blank" rel="noopener noreferrer" ' +
+                'style="display: inline-block; background-color: #4285f4; color: white; padding: 8px 16px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 14px;">' +
+                '🧭 Get Directions' +
+                '</a>' +
+                '</div>' +
                 '</div>';
               marker.bindPopup(popupContent, {
                 maxWidth: 350,
@@ -897,6 +1006,19 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
                 autoCapitalize="words"
                 autoCorrect={false}
               />
+              {speechSupported && (
+                <TouchableOpacity
+                  style={[styles.speechButton, isListening && styles.speechButtonActive]}
+                  onPress={toggleSpeechRecognition}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.micIcon}>
+                    <View style={[styles.micBody, isListening && styles.micBodyActive]} />
+                    <View style={[styles.micStand, isListening && styles.micStandActive]} />
+                    <View style={[styles.micBase, isListening && styles.micBaseActive]} />
+                  </View>
+                </TouchableOpacity>
+              )}
               {searchQuery.length > 0 && (
                 <TouchableOpacity
                   style={styles.clearSearchButton}
@@ -906,6 +1028,18 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
                 </TouchableOpacity>
               )}
             </View>
+            {isListening && (
+              <TouchableOpacity
+                style={styles.listeningIndicator}
+                onPress={toggleSpeechRecognition}
+                activeOpacity={0.8}
+              >
+                <View style={styles.listeningContent}>
+                  <View style={styles.pulsingDot} />
+                  <Text style={styles.listeningText}>Listening... Speak now (tap to stop)</Text>
+                </View>
+              </TouchableOpacity>
+            )}
           </View>
 
           {/* Filters and Sort Container */}
@@ -1170,6 +1304,15 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
           <Text style={styles.noDataSubtext}>Check your connection and try refreshing</Text>
         </View>
       )}
+
+      {/* Favorite Name Modal */}
+      <FavoriteNameModal
+        visible={showNameModal}
+        onClose={handleModalClose}
+        onSave={handleSaveFavorite}
+        defaultName={pendingFavorite?.title || ''}
+        streetAddress={pendingFavorite?.streetAddress || ''}
+      />
     </View>
   );
 };
@@ -1315,6 +1458,82 @@ const styles = StyleSheet.create({
     color: '#2c3e50',
     paddingVertical: 0,
   },
+  speechButton: {
+    padding: 8,
+    marginLeft: 8,
+    borderRadius: 20,
+    backgroundColor: '#f8f9fa',
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+    minWidth: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  speechButtonActive: {
+    backgroundColor: '#e74c3c',
+    borderColor: '#e74c3c',
+  },
+  speechButtonText: {
+    fontSize: 16,
+    color: '#6c757d',
+  },
+  speechButtonTextActive: {
+    color: '#fff',
+  },
+  clearSearchButton: {
+    padding: 4,
+    marginLeft: 8,
+  },
+  speechButton: {
+    padding: 10,
+    marginLeft: 8,
+    borderRadius: 24,
+    backgroundColor: '#f8f9fa',
+    borderWidth: 2,
+    borderColor: '#e9ecef',
+    minWidth: 48,
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  speechButtonActive: {
+    backgroundColor: '#4285f4',
+    borderColor: '#4285f4',
+  },
+  micIcon: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 20,
+    height: 20,
+  },
+  micBody: {
+    width: 8,
+    height: 12,
+    backgroundColor: '#6c757d',
+    borderRadius: 4,
+    marginBottom: 2,
+  },
+  micBodyActive: {
+    backgroundColor: '#fff',
+  },
+  micStand: {
+    width: 1,
+    height: 4,
+    backgroundColor: '#6c757d',
+    marginBottom: 1,
+  },
+  micStandActive: {
+    backgroundColor: '#fff',
+  },
+  micBase: {
+    width: 8,
+    height: 1,
+    backgroundColor: '#6c757d',
+    borderRadius: 0.5,
+  },
+  micBaseActive: {
+    backgroundColor: '#fff',
+  },
   clearSearchButton: {
     padding: 4,
     marginLeft: 8,
@@ -1323,6 +1542,43 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#95a5a6',
     fontWeight: 'bold',
+  },
+  listeningIndicator: {
+    backgroundColor: '#4285f4',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginTop: 8,
+    alignItems: 'center',
+  },
+  listeningContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  pulsingDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#fff',
+    marginRight: 8,
+  },
+  listeningText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  listeningIndicator: {
+    backgroundColor: '#e74c3c',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginTop: 8,
+    alignItems: 'center',
+  },
+  listeningText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
   },
   filtersContainer: {
     backgroundColor: '#fff',
