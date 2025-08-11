@@ -1216,24 +1216,24 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
                   <View style={styles.restrictionSection}>
                     {restrictionDetails.signType ? (
                       <View style={styles.signInfoContainer}>
-                        {/* Sign Type Badge */}
-                        <View style={styles.signTypeBadge}>
-                          <Text style={styles.signTypeText}>{restrictionDetails.signType}</Text>
-                        </View>
-
-                        {/* Time Range */}
-                        <View style={styles.timeInfoContainer}>
-                          <Text style={styles.timeLabel}>Hours:</Text>
-                          <Text style={styles.timeRange}>{restrictionDetails.timeRange}</Text>
-                        </View>
-
-                        {/* Days */}
-                        {restrictionDetails.days && (
-                          <View style={styles.daysContainer}>
-                            <Text style={styles.daysLabel}>Days:</Text>
-                            <Text style={styles.daysText}>{restrictionDetails.days}</Text>
+                        {/* All restriction info evenly distributed */}
+                        <View style={styles.restrictionRow}>
+                          <View style={styles.signTypeBadge}>
+                            <Text style={styles.signTypeText}>{restrictionDetails.signType}</Text>
                           </View>
-                        )}
+
+                          <View style={styles.timeSection}>
+                            <Text style={styles.timeContext}>Hours</Text>
+                            <Text style={styles.timeValue}>{restrictionDetails.timeRange}</Text>
+                          </View>
+
+                          {restrictionDetails.days && (
+                            <View style={styles.daysSection}>
+                              <Text style={styles.daysContext}>Days</Text>
+                              <Text style={styles.daysValue}>{restrictionDetails.days}</Text>
+                            </View>
+                          )}
+                        </View>
                       </View>
                     ) : (
                       <Text style={styles.noRestrictionText}>ℹ️ CHECK LOCAL SIGNS FOR DETAILS</Text>
@@ -1863,18 +1863,27 @@ const styles = StyleSheet.create({
     borderLeftWidth: 4,
     borderLeftColor: '#3498db',
   },
+  restrictionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    gap: 12,
+  },
   signTypeBadge: {
     backgroundColor: '#3498db',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    alignSelf: 'flex-start',
-    marginBottom: 12,
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     shadowColor: '#3498db',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
     elevation: 3,
+    minWidth: 60,
+    alignItems: 'center',
+    flex: 0.8,
   },
   signTypeText: {
     color: '#fff',
@@ -1882,37 +1891,43 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     letterSpacing: 1,
   },
-  timeInfoContainer: {
-    marginBottom: 8,
+  timeSection: {
+    flex: 2,
+    alignItems: 'center',
+    paddingHorizontal: 8,
   },
-  timeLabel: {
+  timeContext: {
     fontSize: 12,
     fontWeight: '600',
     color: '#7f8c8d',
-    marginBottom: 2,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+    marginBottom: 2,
   },
-  timeRange: {
-    fontSize: 16,
-    fontWeight: '600',
+  timeValue: {
+    fontSize: 15,
+    fontWeight: '700',
     color: '#2c3e50',
+    textAlign: 'center',
   },
-  daysContainer: {
-    marginBottom: 8,
+  daysSection: {
+    flex: 1.5,
+    alignItems: 'center',
+    paddingHorizontal: 8,
   },
-  daysLabel: {
+  daysContext: {
     fontSize: 12,
     fontWeight: '600',
     color: '#7f8c8d',
-    marginBottom: 2,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+    marginBottom: 2,
   },
-  daysText: {
-    fontSize: 14,
-    fontWeight: '500',
+  daysValue: {
+    fontSize: 15,
+    fontWeight: '700',
     color: '#34495e',
+    textAlign: 'center',
   },
   noRestrictionText: {
     fontSize: 16,
