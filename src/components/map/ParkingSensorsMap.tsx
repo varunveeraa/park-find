@@ -1,8 +1,8 @@
 import * as Location from 'expo-location';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, AppState, Linking, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { parkingSensorsApi } from '../../services/api/parkingSensorsApi';
-import { ApiError, ParkingSensorMarker } from '../../types';
+import { ApiError, EnhancedParkingSensorMarker } from '../../types';
 
 interface Region {
   latitude: number;
@@ -31,7 +31,7 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
   autoRefresh = true,
   refreshInterval = 120000, // 2 minutes
 }) => {
-  const [markers, setMarkers] = useState<ParkingSensorMarker[]>([]);
+  const [markers, setMarkers] = useState<EnhancedParkingSensorMarker[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [region, setRegion] = useState<Region>(initialRegion);
@@ -78,7 +78,7 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
       };
 
       const response = await parkingSensorsApi.fetchMultiplePages(300);
-      const parkingMarkers = parkingSensorsApi.convertToMarkers(response.results);
+      const parkingMarkers = await parkingSensorsApi.convertToEnhancedMarkers(response.results);
 
       setMarkers(parkingMarkers);
       setLastRefresh(new Date());
@@ -170,7 +170,9 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
       lng: marker.coordinate.longitude,
       title: marker.title,
       description: marker.description,
-      color: marker.isOccupied ? '#FF6B6B' : '#4ECDC4'
+      color: marker.isOccupied ? '#FF6B6B' : '#4ECDC4',
+      restriction: marker.currentRestriction || 'No restriction data',
+      isRestricted: marker.isRestricted || false
     }));
 
     return `
@@ -253,8 +255,14 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
                 fillOpacity: 0.8
               }).addTo(map);
 
-              // Add popup
-              marker.bindPopup('<div><h4>' + markerData.title + '</h4><p>' + markerData.description + '</p></div>');
+              // Add popup with restriction info
+              const popupContent = '<div>' +
+                '<h4>' + markerData.title + '</h4>' +
+                '<p>' + markerData.description + '</p>' +
+                '<p><strong>Restriction:</strong> ' + markerData.restriction + '</p>' +
+                (markerData.isRestricted ? '<p style="color: #FF8C00;">⚠️ Currently restricted</p>' : '<p style="color: #4ECDC4;">✅ No active restrictions</p>') +
+                '</div>';
+              marker.bindPopup(popupContent);
             });
 
             // Add legend
@@ -280,37 +288,14 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
     `;
   };
 
-  const openInNewTab = async () => {
-    if (Platform.OS === 'web') {
-      const mapHTML = generateMapHTML();
-      const blob = new Blob([mapHTML], { type: 'text/html' });
-      const url = URL.createObjectURL(blob);
-      window.open(url, '_blank');
-    } else {
-      // For mobile platforms, open OpenStreetMap or Google Maps
-      const melbourneCenter = '-37.8136,144.9631';
-      const osmUrl = `https://www.openstreetmap.org/#map=13/${melbourneCenter}`;
-      const googleMapsUrl = `https://www.google.com/maps/search/parking/@${melbourneCenter},13z`;
+  const [mapHtml, setMapHtml] = useState<string>('');
 
-      try {
-        // Try Google Maps first (better mobile experience)
-        let supported = await Linking.canOpenURL(googleMapsUrl);
-        if (supported) {
-          await Linking.openURL(googleMapsUrl);
-        } else {
-          // Fallback to OpenStreetMap
-          supported = await Linking.canOpenURL(osmUrl);
-          if (supported) {
-            await Linking.openURL(osmUrl);
-          } else {
-            Alert.alert('Error', 'Cannot open maps application');
-          }
-        }
-      } catch (error) {
-        Alert.alert('Error', 'Failed to open maps application');
-      }
+  // Generate map HTML when markers change
+  useEffect(() => {
+    if (markers.length > 0) {
+      setMapHtml(generateMapHTML());
     }
-  };
+  }, [markers]);
 
   if (loading && markers.length === 0) {
     return (
@@ -323,58 +308,103 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Melbourne Parking Sensors</Text>
-        <TouchableOpacity style={styles.openMapButton} onPress={openInNewTab}>
-          <Text style={styles.openMapButtonText}>Open Map in New Tab</Text>
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.statsContainer}>
-        <View style={styles.statItem}>
-          <Text style={styles.statNumber}>{markers.length}</Text>
-          <Text style={styles.statLabel}>Total Sensors</Text>
+      {/* Top Half - Sensor List */}
+      <View style={styles.topHalf}>
+        <View style={styles.header}>
+          <Text style={styles.title}>Melbourne Parking Sensors</Text>
+          <TouchableOpacity style={styles.refreshButton} onPress={handleManualRefresh}>
+            <Text style={styles.refreshButtonText}>🔄 Refresh</Text>
+          </TouchableOpacity>
         </View>
-        <View style={styles.statItem}>
-          <Text style={[styles.statNumber, { color: '#4ECDC4' }]}>
-            {markers.filter(m => !m.isOccupied).length}
-          </Text>
-          <Text style={styles.statLabel}>Available</Text>
-        </View>
-        <View style={styles.statItem}>
-          <Text style={[styles.statNumber, { color: '#FF6B6B' }]}>
-            {markers.filter(m => m.isOccupied).length}
-          </Text>
-          <Text style={styles.statLabel}>Occupied</Text>
-        </View>
-      </View>
 
-      <View style={styles.mapPlaceholder}>
-        <View style={styles.mapPreview}>
-          <Text style={styles.mapTitle}>🗺️ Melbourne Parking Sensors Map</Text>
-          <Text style={styles.mapDescription}>
-            Click "Open Map in New Tab" above to view the interactive map with real-time parking data
-          </Text>
+        <View style={styles.statsContainer}>
+          <View style={styles.statItem}>
+            <Text style={styles.statNumber}>{markers.length}</Text>
+            <Text style={styles.statLabel}>Total</Text>
+          </View>
+          <View style={styles.statItem}>
+            <Text style={[styles.statNumber, { color: '#4ECDC4' }]}>
+              {markers.filter(m => !m.isOccupied).length}
+            </Text>
+            <Text style={styles.statLabel}>Available</Text>
+          </View>
+          <View style={styles.statItem}>
+            <Text style={[styles.statNumber, { color: '#FF6B6B' }]}>
+              {markers.filter(m => m.isOccupied).length}
+            </Text>
+            <Text style={styles.statLabel}>Occupied</Text>
+          </View>
+          <View style={styles.statItem}>
+            <Text style={[styles.statNumber, { color: '#FF8C00' }]}>
+              {markers.filter(m => m.isRestricted).length}
+            </Text>
+            <Text style={styles.statLabel}>Restricted</Text>
+          </View>
+        </View>
 
-          <View style={styles.sensorList}>
-            <Text style={styles.sensorListTitle}>Recent Sensor Updates:</Text>
-            {markers.slice(0, 5).map((marker, index) => (
-              <View key={marker.id} style={styles.sensorItem}>
+        <View style={styles.sensorListContainer}>
+          <View style={styles.listHeader}>
+            <Text style={styles.sensorListTitle}>Parking Sensors ({markers.length})</Text>
+            <Text style={styles.lastUpdateText}>
+              Updated: {lastRefresh.toLocaleTimeString()}
+            </Text>
+          </View>
+          <ScrollView style={styles.sensorList} showsVerticalScrollIndicator={false}>
+            {markers.map((marker, index) => (
+              <View key={marker.id} style={[
+                styles.sensorItem,
+                { borderLeftColor: marker.isOccupied ? '#FF6B6B' : '#4ECDC4' }
+              ]}>
                 <View style={[styles.statusDot, { backgroundColor: marker.isOccupied ? '#FF6B6B' : '#4ECDC4' }]} />
                 <View style={styles.sensorInfo}>
                   <Text style={styles.sensorTitle}>{marker.title}</Text>
                   <Text style={styles.sensorStatus}>
                     {marker.isOccupied ? '🔴 Occupied' : '🟢 Available'}
                   </Text>
+                  {marker.currentRestriction && (
+                    <Text style={[
+                      styles.sensorRestriction,
+                      { color: marker.isRestricted ? '#FF8C00' : '#666' }
+                    ]}>
+                      🅿️ {marker.currentRestriction}
+                    </Text>
+                  )}
+                  <Text style={styles.sensorLocation}>
+                    📍 {marker.coordinate.latitude.toFixed(4)}, {marker.coordinate.longitude.toFixed(4)}
+                  </Text>
                 </View>
               </View>
             ))}
-          </View>
-
-          <TouchableOpacity style={styles.refreshButton} onPress={handleManualRefresh}>
-            <Text style={styles.refreshButtonText}>🔄 Refresh Data</Text>
-          </TouchableOpacity>
+          </ScrollView>
         </View>
+      </View>
+
+      {/* Bottom Half - Interactive Map */}
+      <View style={styles.bottomHalf}>
+        <View style={styles.mapHeader}>
+          <Text style={styles.mapTitle}>Interactive Map</Text>
+        </View>
+        {Platform.OS === 'web' && mapHtml ? (
+          <iframe
+            srcDoc={mapHtml}
+            style={{
+              width: '100%',
+              height: '100%',
+              border: 'none',
+              borderRadius: '8px',
+            }}
+            title="Melbourne Parking Sensors Map"
+          />
+        ) : (
+          <View style={styles.mapPlaceholder}>
+            <Text style={styles.mapPlaceholderText}>
+              📱 Interactive map is available on web platform
+            </Text>
+            <Text style={styles.mapPlaceholderSubtext}>
+              View the sensor list above for real-time parking data
+            </Text>
+          </View>
+        )}
       </View>
 
       {loading && markers.length > 0 && (
@@ -383,12 +413,6 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
           <Text style={styles.refreshText}>Updating...</Text>
         </View>
       )}
-
-      <View style={styles.lastUpdateContainer}>
-        <Text style={styles.lastUpdateText}>
-          Last updated: {lastRefresh.toLocaleTimeString()}
-        </Text>
-      </View>
 
       {error && (
         <View style={styles.errorContainer}>
@@ -404,8 +428,8 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
 
       {!loading && markers.length === 0 && !error && (
         <View style={styles.noDataContainer}>
-          <Text style={styles.noDataText}>No parking sensors found in this area</Text>
-          <Text style={styles.noDataSubtext}>Try moving to Melbourne, Australia or check your connection</Text>
+          <Text style={styles.noDataText}>No parking sensors found</Text>
+          <Text style={styles.noDataSubtext}>Check your connection and try refreshing</Text>
         </View>
       )}
     </View>
@@ -417,7 +441,20 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f5f5f5',
   },
+  topHalf: {
+    flex: 1,
+    backgroundColor: '#fff',
+  },
+  bottomHalf: {
+    flex: 1,
+    backgroundColor: '#fff',
+    marginTop: 2,
+    padding: 10,
+  },
   header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     backgroundColor: '#fff',
     padding: 20,
     borderBottomWidth: 1,
@@ -427,24 +464,23 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: 'bold',
     color: '#333',
+  },
+  mapHeader: {
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
     marginBottom: 10,
   },
-  openMapButton: {
-    backgroundColor: '#4ECDC4',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  openMapButtonText: {
-    color: 'white',
-    fontSize: 16,
+  mapTitle: {
+    fontSize: 18,
     fontWeight: 'bold',
+    color: '#333',
+    textAlign: 'center',
   },
   statsContainer: {
     flexDirection: 'row',
     backgroundColor: '#fff',
-    paddingVertical: 20,
+    paddingVertical: 15,
     paddingHorizontal: 10,
     justifyContent: 'space-around',
     borderBottomWidth: 1,
@@ -454,58 +490,66 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   statNumber: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: 'bold',
     color: '#333',
   },
   statLabel: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#666',
     marginTop: 4,
   },
-  mapPlaceholder: {
+  sensorListContainer: {
     flex: 1,
-    padding: 20,
+    padding: 15,
   },
-  mapPreview: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  mapTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
-    textAlign: 'center',
-    marginBottom: 10,
-  },
-  mapDescription: {
-    fontSize: 16,
-    color: '#666',
-    textAlign: 'center',
-    marginBottom: 20,
-    lineHeight: 22,
+  listHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 15,
   },
   sensorList: {
-    marginBottom: 20,
+    flex: 1,
+  },
+  mapPlaceholder: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+    margin: 10,
+  },
+  mapPlaceholderText: {
+    fontSize: 18,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  mapPlaceholderSubtext: {
+    fontSize: 14,
+    color: '#999',
+    textAlign: 'center',
   },
   sensorListTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     color: '#333',
-    marginBottom: 15,
+  },
+  lastUpdateText: {
+    fontSize: 12,
+    color: '#666',
   },
   sensorItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    marginBottom: 8,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: '#4ECDC4',
   },
   statusDot: {
     width: 12,
@@ -524,6 +568,16 @@ const styles = StyleSheet.create({
   sensorStatus: {
     fontSize: 14,
     color: '#666',
+    marginTop: 2,
+  },
+  sensorRestriction: {
+    fontSize: 13,
+    marginTop: 3,
+    fontWeight: '500',
+  },
+  sensorLocation: {
+    fontSize: 12,
+    color: '#999',
     marginTop: 2,
   },
   loadingContainer: {
@@ -574,14 +628,14 @@ const styles = StyleSheet.create({
   },
   refreshButton: {
     backgroundColor: '#4ECDC4',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
     alignItems: 'center',
   },
   refreshButtonText: {
     color: 'white',
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: 'bold',
   },
   lastUpdateContainer: {

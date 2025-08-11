@@ -44,6 +44,27 @@ export interface ParkingSensorQueryParams {
   timezone?: string;
 }
 
+// Parking Zone Sign Plates API Types
+export interface ParkingZoneSignPlate {
+  parkingzone: number;
+  restriction_days: string;
+  time_restrictions_start: string;
+  time_restrictions_finish: string;
+  restriction_display: string;
+}
+
+export interface ParkingZoneSignPlatesApiResponse {
+  total_count: number;
+  results: ParkingZoneSignPlate[];
+}
+
+// Enhanced marker with restriction info
+export interface EnhancedParkingSensorMarker extends ParkingSensorMarker {
+  restrictions?: ParkingZoneSignPlate[];
+  currentRestriction?: string;
+  isRestricted?: boolean;
+}
+
 // Error types
 export interface ApiError {
   message: string;
