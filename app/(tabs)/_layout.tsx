@@ -15,10 +15,20 @@ export default function TabLayout() {
   // Initialize website logging
   useWebsiteLogging();
 
+  // Get base theme colors (ignore color blind mode for navigation)
+  const getBaseColorScheme = (scheme: string) => {
+    if (scheme === 'colorBlindLight') return 'light';
+    if (scheme === 'colorBlindDark') return 'dark';
+    return scheme as 'light' | 'dark';
+  };
+
+  const baseColorScheme = getBaseColorScheme(colorScheme ?? 'light');
+
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
+        tabBarActiveTintColor: Colors[baseColorScheme].tint,
+        tabBarInactiveTintColor: Colors[baseColorScheme].tabIconDefault,
         headerShown: false,
         tabBarButton: HapticTab,
         tabBarBackground: TabBarBackground,
@@ -27,7 +37,10 @@ export default function TabLayout() {
             // Use a transparent background on iOS to show the blur effect
             position: 'absolute',
           },
-          default: {},
+          default: {
+            backgroundColor: Colors[baseColorScheme].background,
+            borderTopColor: Colors[baseColorScheme].border,
+          },
         }),
       }}>
       <Tabs.Screen

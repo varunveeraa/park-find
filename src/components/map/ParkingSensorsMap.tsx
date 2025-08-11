@@ -2,7 +2,7 @@ import { Colors } from '@/constants/Colors';
 import { FavoriteNameModal } from '@/src/components/favorites/FavoriteNameModal';
 import * as Location from 'expo-location';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, AppState, Dimensions, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, Dimensions, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useTheme } from '../../contexts/ThemeContext';
 import { parkingSensorsApi } from '../../services/api/parkingSensorsApi';
 import FavoritesService, { favoritesService } from '../../services/database/favoritesService';
@@ -11,6 +11,7 @@ import { webDatabaseService } from '../../services/database/webDatabaseService';
 import { ApiError, EnhancedParkingSensorMarker } from '../../types';
 import { calculateDistance, calculateDrivingTime, formatDistance, formatDrivingTime } from '../../utils/distance';
 import { UserLocationDisplay } from '../location/UserLocationDisplay';
+import { ColorBlindToggleButton } from '../ui/ColorBlindToggleButton';
 import { ThemeToggleButton } from '../ui/ThemeToggleButton';
 
 interface Region {
@@ -507,7 +508,22 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
     setShowSortDropdown(false);
   };
 
-  // Dropdown component
+  // State for dropdown positions
+  const [dropdownPositions, setDropdownPositions] = useState<{[key: string]: {x: number, y: number, width: number}}>({});
+
+  // Measure dropdown button positions
+  const measureDropdownButton = (key: string, ref: any) => {
+    if (ref) {
+      ref.measure((x: number, y: number, width: number, height: number, pageX: number, pageY: number) => {
+        setDropdownPositions(prev => ({
+          ...prev,
+          [key]: { x: pageX, y: pageY + height, width }
+        }));
+      });
+    }
+  };
+
+  // Modal-based dropdown component for web compatibility
   const Dropdown = ({
     label,
     value,
@@ -523,7 +539,7 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
     isOpen: boolean;
     onToggle: () => void;
   }) => (
-    <View style={[styles.dropdownContainer, isOpen && { zIndex: 1000 }]}>
+    <View style={styles.dropdownContainer}>
       <TouchableOpacity
         style={styles.dropdownButton}
         onPress={() => {
@@ -542,33 +558,50 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
         </View>
       </TouchableOpacity>
 
-      {isOpen && (
-        <View style={styles.dropdownMenu}>
-          {options.map((option, index) => (
-            <TouchableOpacity
-              key={option.key}
-              style={[
-                styles.dropdownOption,
-                value === option.key && styles.dropdownOptionSelected,
-                index === options.length - 1 && { borderBottomWidth: 0 }
-              ]}
-              onPress={() => {
-                onSelect(option.key);
-                onToggle();
-              }}
-            >
-              <Text style={[
-                styles.dropdownOptionText,
-                value === option.key && styles.dropdownOptionTextSelected
-              ]}>
-                {option.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      )}
+      <Modal
+        visible={isOpen}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => onToggle()}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => onToggle()}
+        >
+          <View style={styles.modalDropdownMenu}>
+            <Text style={styles.modalDropdownTitle}>{label}</Text>
+            {options.map((option, index) => (
+              <TouchableOpacity
+                key={option.key}
+                style={[
+                  styles.modalDropdownOption,
+                  value === option.key && styles.modalDropdownOptionSelected,
+                  index === options.length - 1 && { borderBottomWidth: 0 }
+                ]}
+                onPress={() => {
+                  onSelect(option.key);
+                  onToggle();
+                }}
+              >
+                <Text style={[
+                  styles.modalDropdownOptionText,
+                  value === option.key && styles.modalDropdownOptionTextSelected
+                ]}>
+                  {option.label}
+                </Text>
+                {value === option.key && (
+                  <Text style={styles.modalDropdownCheckmark}>✓</Text>
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
+
+
 
   // Parse parking restriction details
   const parseRestrictionDetails = (marker: EnhancedParkingSensorMarker) => {
@@ -961,6 +994,7 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
             </View>
           </View>
           <View style={styles.headerActions}>
+            <ColorBlindToggleButton size={20} />
             <ThemeToggleButton size={20} />
             <TouchableOpacity style={styles.refreshButton} onPress={handleManualRefresh}>
               <Text style={styles.refreshButtonText}>↻</Text>
@@ -1379,6 +1413,8 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
         defaultName={pendingFavorite?.title || ''}
         streetAddress={pendingFavorite?.streetAddress || ''}
       />
+
+
     </View>
   );
 };
@@ -1506,6 +1542,7 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
     minHeight: 0, // Important for ScrollView in flex container
     position: 'relative',
     zIndex: 1,
+    overflow: 'visible',
   },
   utilityControlsContainer: {
     backgroundColor: colors.cardBackground,
@@ -1518,6 +1555,7 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+    overflow: 'visible',
   },
   listHeader: {
     backgroundColor: colors.cardBackground,
@@ -1761,19 +1799,26 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
     marginTop: 6,
     borderRadius: 8,
     padding: 6,
-    zIndex: 100,
+    zIndex: 5000,
+    elevation: 5000,
   },
   dropdownsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 12,
     marginBottom: 16,
+    zIndex: 10000,
+    elevation: 10000,
   },
   dropdownContainer: {
     flex: 1,
     minWidth: 120,
     position: 'relative',
     zIndex: 10,
+  },
+  dropdownContainerOpen: {
+    zIndex: 999999,
+    elevation: 999999,
   },
   dropdownButton: {
     backgroundColor: colors.buttonSecondary,
@@ -1807,23 +1852,62 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
     color: colors.textSecondary,
     marginLeft: 8,
   },
-  dropdownMenu: {
-    position: 'absolute',
-    top: '100%',
-    left: 0,
-    right: 0,
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalDropdownMenu: {
     backgroundColor: colors.cardBackground,
-    borderRadius: 8,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.borderLight,
     shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.25,
     shadowRadius: 16,
-    elevation: 20,
-    zIndex: 9999,
-    marginTop: 4,
-    maxHeight: 200,
+    elevation: 10,
+    minWidth: 200,
+    maxWidth: 300,
+    maxHeight: 400,
+  },
+  modalDropdownTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.text,
+    padding: 16,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderLight,
+  },
+  modalDropdownOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderLight,
+  },
+  modalDropdownOptionSelected: {
+    backgroundColor: colors.buttonPrimary + '10',
+  },
+  modalDropdownOptionText: {
+    fontSize: 14,
+    color: colors.text,
+    flex: 1,
+  },
+  modalDropdownOptionTextSelected: {
+    color: colors.buttonPrimary,
+    fontWeight: '600',
+  },
+  modalDropdownCheckmark: {
+    fontSize: 16,
+    color: colors.buttonPrimary,
+    fontWeight: 'bold',
+    marginLeft: 8,
   },
   dropdownOption: {
     paddingHorizontal: 16,

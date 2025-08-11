@@ -7,15 +7,21 @@ import { Colors } from '@/constants/Colors';
 import { useTheme } from '@/src/contexts/ThemeContext';
 
 export function useThemeColor(
-  props: { light?: string; dark?: string },
-  colorName: keyof typeof Colors.light & keyof typeof Colors.dark
+  props: { light?: string; dark?: string; colorBlindLight?: string; colorBlindDark?: string },
+  colorName: keyof typeof Colors.light & keyof typeof Colors.dark & keyof typeof Colors.colorBlindLight & keyof typeof Colors.colorBlindDark
 ) {
   const { colorScheme } = useTheme();
-  const colorFromProps = props[colorScheme];
+
+  // Map color scheme to props key
+  const propsKey = colorScheme === 'colorBlindLight' ? 'colorBlindLight' :
+                   colorScheme === 'colorBlindDark' ? 'colorBlindDark' :
+                   colorScheme as keyof typeof props;
+
+  const colorFromProps = props[propsKey];
 
   if (colorFromProps) {
     return colorFromProps;
   } else {
-    return Colors[colorScheme][colorName];
+    return (Colors as any)[colorScheme][colorName];
   }
 }

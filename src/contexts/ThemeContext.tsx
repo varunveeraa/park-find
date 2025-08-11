@@ -1,20 +1,23 @@
-import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { useColorScheme as useSystemColorScheme } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import React, { createContext, ReactNode, useContext, useEffect, useState } from 'react';
+import { useColorScheme as useSystemColorScheme } from 'react-native';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
-export type ColorScheme = 'light' | 'dark';
+export type ColorScheme = 'light' | 'dark' | 'colorBlindLight' | 'colorBlindDark';
 
 interface ThemeContextType {
   themeMode: ThemeMode;
   colorScheme: ColorScheme;
+  isColorBlindMode: boolean;
   setThemeMode: (mode: ThemeMode) => void;
   toggleTheme: () => void;
+  toggleColorBlindMode: () => void;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 const THEME_STORAGE_KEY = '@park_find_theme_mode';
+const COLOR_BLIND_STORAGE_KEY = '@park_find_color_blind_mode';
 
 interface ThemeProviderProps {
   children: ReactNode;
@@ -23,29 +26,48 @@ interface ThemeProviderProps {
 export function ThemeProvider({ children }: ThemeProviderProps) {
   const systemColorScheme = useSystemColorScheme();
   const [themeMode, setThemeModeState] = useState<ThemeMode>('system');
+  const [isColorBlindMode, setIsColorBlindMode] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // Calculate the actual color scheme based on theme mode
-  const colorScheme: ColorScheme = themeMode === 'system' 
-    ? (systemColorScheme ?? 'light')
-    : themeMode;
+  // Calculate the actual color scheme based on theme mode and color blind mode
+  const getColorScheme = (): ColorScheme => {
+    const baseScheme = themeMode === 'system'
+      ? (systemColorScheme ?? 'light')
+      : themeMode;
 
-  // Load saved theme mode from storage
+    if (isColorBlindMode) {
+      return baseScheme === 'dark' ? 'colorBlindDark' : 'colorBlindLight';
+    }
+
+    return baseScheme as ColorScheme;
+  };
+
+  const colorScheme = getColorScheme();
+
+  // Load saved theme mode and color blind mode from storage
   useEffect(() => {
-    const loadThemeMode = async () => {
+    const loadSettings = async () => {
       try {
-        const savedThemeMode = await AsyncStorage.getItem(THEME_STORAGE_KEY);
+        const [savedThemeMode, savedColorBlindMode] = await Promise.all([
+          AsyncStorage.getItem(THEME_STORAGE_KEY),
+          AsyncStorage.getItem(COLOR_BLIND_STORAGE_KEY)
+        ]);
+
         if (savedThemeMode && ['light', 'dark', 'system'].includes(savedThemeMode)) {
           setThemeModeState(savedThemeMode as ThemeMode);
         }
+
+        if (savedColorBlindMode === 'true') {
+          setIsColorBlindMode(true);
+        }
       } catch (error) {
-        console.warn('Failed to load theme mode from storage:', error);
+        console.warn('Failed to load settings from storage:', error);
       } finally {
         setIsLoaded(true);
       }
     };
 
-    loadThemeMode();
+    loadSettings();
   }, []);
 
   // Save theme mode to storage when it changes
@@ -68,6 +90,19 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
     setThemeMode(modes[nextIndex]);
   };
 
+  // Toggle color blind mode
+  const toggleColorBlindMode = async () => {
+    try {
+      const newColorBlindMode = !isColorBlindMode;
+      await AsyncStorage.setItem(COLOR_BLIND_STORAGE_KEY, newColorBlindMode.toString());
+      setIsColorBlindMode(newColorBlindMode);
+    } catch (error) {
+      console.warn('Failed to save color blind mode to storage:', error);
+      // Still update the state even if storage fails
+      setIsColorBlindMode(!isColorBlindMode);
+    }
+  };
+
   // Don't render children until theme is loaded to prevent flash
   if (!isLoaded) {
     return null;
@@ -76,8 +111,10 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
   const value: ThemeContextType = {
     themeMode,
     colorScheme,
+    isColorBlindMode,
     setThemeMode,
     toggleTheme,
+    toggleColorBlindMode,
   };
 
   return (

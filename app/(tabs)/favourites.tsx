@@ -3,7 +3,8 @@ import { Colors } from '@/constants/Colors';
 import { useTheme } from '@/src/contexts/ThemeContext';
 import { FavoriteSpot, favoritesService } from '@/src/services/database/favoritesService';
 import { webDatabaseService } from '@/src/services/database/webDatabaseService';
-import React, { useEffect, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import React, { useCallback, useState } from 'react';
 import {
     Alert,
     Linking,
@@ -19,16 +20,13 @@ import {
 
 export default function FavouritesScreen() {
   const { colorScheme } = useTheme();
-  const colors = Colors[colorScheme];
+  const colors = Colors[colorScheme as keyof typeof Colors] || Colors.light;
   const [favourites, setFavourites] = useState<FavoriteSpot[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    initializeAndLoadFavourites();
-  }, []);
-
-  const initializeAndLoadFavourites = async () => {
+  const initializeAndLoadFavourites = useCallback(async () => {
     try {
+      setLoading(true);
       // Initialize database first (only for web)
       if (Platform.OS === 'web') {
         await webDatabaseService.initialize();
@@ -38,7 +36,14 @@ export default function FavouritesScreen() {
       console.error('Error initializing database:', error);
       setLoading(false);
     }
-  };
+  }, []);
+
+  // Reload favorites every time the screen is focused
+  useFocusEffect(
+    useCallback(() => {
+      initializeAndLoadFavourites();
+    }, [initializeAndLoadFavourites])
+  );
 
   const loadFavourites = async () => {
     try {
@@ -244,7 +249,7 @@ export default function FavouritesScreen() {
 
       {favourites.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <IconSymbol name="heart" size={80} color="#bdc3c7" />
+          <IconSymbol name="heart" size={80} color={colors.textSecondary} />
           <Text style={styles.emptyTitle}>No Favourite Spots Yet</Text>
           <Text style={styles.emptySubtitle}>
             Start adding parking spots to your favourites from the Parking Map screen.
@@ -414,13 +419,13 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
   locationText: {
     fontSize: 17,
     fontWeight: '700',
-    color: '#1f2937',
+    color: colors.text,
     marginBottom: 4,
     lineHeight: 22,
   },
   actualLocationText: {
     fontSize: 13,
-    color: '#6b7280',
+    color: colors.textSecondary,
     marginBottom: 8,
     fontStyle: 'italic',
   },
@@ -463,14 +468,14 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
     letterSpacing: 0.3,
   },
   availableText: {
-    color: '#059669',
+    color: colors.success,
   },
   occupiedText: {
-    color: '#dc2626',
+    color: colors.error,
   },
   restrictionText: {
     fontSize: 14,
-    color: '#6b7280',
+    color: colors.textSecondary,
     lineHeight: 20,
     fontWeight: '400',
   },
@@ -509,7 +514,7 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.cardBackground,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1.5,
@@ -537,22 +542,23 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
   emptyTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#2c3e50',
+    color: colors.text,
     marginTop: 20,
     marginBottom: 12,
     textAlign: 'center',
   },
   emptySubtitle: {
     fontSize: 16,
-    color: '#7f8c8d',
+    color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 24,
     marginBottom: 20,
   },
   emptyHint: {
     fontSize: 14,
-    color: '#95a5a6',
+    color: colors.textSecondary,
     textAlign: 'center',
     fontStyle: 'italic',
+    opacity: 0.8,
   },
 });
