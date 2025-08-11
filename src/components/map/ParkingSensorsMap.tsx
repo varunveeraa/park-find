@@ -946,8 +946,19 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
       <View style={[styles.listSection, isWideScreen ? styles.leftHalf : styles.topHalf]}>
         <View style={styles.header}>
           <View style={styles.titleContainer}>
-            <Text style={styles.title}>🅿️ Park Find</Text>
-            <Text style={styles.subtitle}>Find available parking spots in Melbourne</Text>
+            <View style={styles.brandContainer}>
+              <View style={styles.logoContainer}>
+                <View style={styles.parkingLogo}>
+                  <View style={styles.parkingSlot1} />
+                  <View style={styles.parkingSlot2} />
+                  <View style={styles.parkingSlot3} />
+                </View>
+              </View>
+              <View style={styles.brandTextContainer}>
+                <Text style={styles.title}>Park Find</Text>
+                <Text style={styles.subtitle}>Melbourne Parking</Text>
+              </View>
+            </View>
           </View>
           <View style={styles.headerActions}>
             <ThemeToggleButton size={20} />
@@ -961,24 +972,52 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
 
         <View style={styles.sensorListContainer}>
           <View style={styles.listHeader}>
-            <View style={styles.listTitleContainer}>
-              <Text style={styles.sensorListTitle}>
-                🅿️ {searchQuery.trim() ? 'Search Results' : 'Parking Spots'}
-              </Text>
-              <View style={styles.countBadge}>
-                <Text style={styles.countBadgeText}>
-                  {filteredAndSortedMarkers.filter(m => !m.isOccupied).length} available / {filteredAndSortedMarkers.length} total
+            {/* Main Title Section */}
+            <View style={styles.titleSection}>
+              <View style={styles.titleWithIcon}>
+                <View style={styles.parkingIcon}>
+                  <Text style={styles.parkingIconText}>P</Text>
+                </View>
+                <Text style={styles.sensorListTitle}>
+                  {searchQuery.trim() ? 'Search Results' : 'Parking Spots'}
                 </Text>
               </View>
-            </View>
-            {searchQuery.trim() && (
-              <Text style={styles.searchResultsText}>
-                Showing results for &quot;{searchQuery}&quot;
+              <Text style={styles.lastUpdateText}>
+                ↻ {lastRefresh.toLocaleTimeString()}
               </Text>
+            </View>
+
+            {/* Stats Section */}
+            <View style={styles.statsSection}>
+              <View style={styles.statItem}>
+                <Text style={styles.statNumber}>
+                  {filteredAndSortedMarkers.filter(m => !m.isOccupied).length}
+                </Text>
+                <Text style={styles.statLabel}>Available</Text>
+              </View>
+              <View style={styles.statDivider} />
+              <View style={styles.statItem}>
+                <Text style={styles.statNumber}>
+                  {filteredAndSortedMarkers.length}
+                </Text>
+                <Text style={styles.statLabel}>Total Spots</Text>
+              </View>
+              <View style={styles.statDivider} />
+              <View style={styles.statItem}>
+                <Text style={styles.statNumber}>
+                  {Math.round((filteredAndSortedMarkers.filter(m => !m.isOccupied).length / Math.max(filteredAndSortedMarkers.length, 1)) * 100)}%
+                </Text>
+                <Text style={styles.statLabel}>Available</Text>
+              </View>
+            </View>
+
+            {searchQuery.trim() && (
+              <View style={styles.searchResultsBanner}>
+                <Text style={styles.searchResultsText}>
+                  🔍 Showing results for "{searchQuery}"
+                </Text>
+              </View>
             )}
-            <Text style={styles.lastUpdateText}>
-              Updated: {lastRefresh.toLocaleTimeString()}
-            </Text>
           </View>
 
           {/* Utility Controls Container */}
@@ -1280,11 +1319,6 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
 
       {/* Map Section */}
       <View style={[styles.mapSection, isWideScreen ? styles.rightHalf : styles.bottomHalf]}>
-        <View style={styles.mapHeader}>
-          <Text style={styles.mapTitle}>
-            {isWideScreen ? '🗺️ Interactive Map' : 'Interactive Map'}
-          </Text>
-        </View>
         {Platform.OS === 'web' && mapHtml ? (
           <iframe
             srcDoc={mapHtml}
@@ -1401,37 +1435,69 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
   titleContainer: {
     flex: 1,
   },
+  brandContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  logoContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: colors.backgroundSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  parkingLogo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  parkingSlot1: {
+    width: 6,
+    height: 12,
+    backgroundColor: colors.success,
+    borderRadius: 1,
+  },
+  parkingSlot2: {
+    width: 6,
+    height: 12,
+    backgroundColor: colors.success,
+    borderRadius: 1,
+  },
+  parkingSlot3: {
+    width: 6,
+    height: 12,
+    backgroundColor: colors.textSecondary,
+    borderRadius: 1,
+    opacity: 0.4,
+  },
+  brandTextContainer: {
+    flex: 1,
+  },
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
   },
   title: {
-    fontSize: 26,
-    fontWeight: 'bold',
+    fontSize: 28,
+    fontWeight: '900',
     color: colors.text,
-    marginBottom: 2,
+    marginBottom: 3,
+    letterSpacing: -0.5,
   },
   subtitle: {
     fontSize: 14,
     color: colors.textSecondary,
     fontWeight: '500',
+    opacity: 0.9,
+    letterSpacing: 0.3,
   },
-  mapHeader: {
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    marginBottom: 12,
-    backgroundColor: colors.cardBackground,
-    borderRadius: 8,
-    padding: 12,
-  },
-  mapTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: colors.text,
-    textAlign: 'center',
-  },
+
+
 
   sensorListContainer: {
     flex: 1,
@@ -1465,22 +1531,75 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
     shadowRadius: 2,
     elevation: 2,
   },
-  listTitleContainer: {
+  titleSection: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  titleWithIcon: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 4,
+    flex: 1,
   },
-  countBadge: {
-    backgroundColor: colors.success,
-    borderRadius: 10,
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    marginLeft: 6,
+  parkingIcon: {
+    backgroundColor: colors.buttonPrimary,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+    shadowColor: colors.buttonPrimary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  countBadgeText: {
+  parkingIconText: {
     color: colors.buttonText,
-    fontSize: 10,
+    fontSize: 16,
     fontWeight: 'bold',
+  },
+  statsSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    backgroundColor: colors.backgroundSecondary,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
+  statItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  statNumber: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: colors.text,
+    marginBottom: 2,
+  },
+  statLabel: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    fontWeight: '500',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  statDivider: {
+    width: 1,
+    height: 30,
+    backgroundColor: colors.border,
+    marginHorizontal: 8,
+  },
+  searchResultsBanner: {
+    backgroundColor: colors.info,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginTop: 4,
   },
   sensorList: {
     flex: 1,
@@ -1764,7 +1883,7 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
     lineHeight: 20,
   },
   sensorListTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '700',
     color: colors.text,
     letterSpacing: 0.3,
@@ -1773,14 +1892,13 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
     fontSize: 11,
     color: colors.textSecondary,
     fontWeight: '500',
-    marginTop: 4,
+    opacity: 0.8,
   },
   searchResultsText: {
     fontSize: 12,
-    color: colors.textSecondary,
-    fontStyle: 'italic',
-    marginTop: 4,
-    marginBottom: 8,
+    color: colors.buttonText,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   parkingSpot: {
     backgroundColor: colors.cardBackground,

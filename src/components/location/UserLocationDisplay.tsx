@@ -21,6 +21,101 @@ export const UserLocationDisplay: React.FC<UserLocationDisplayProps> = ({
   const [locationPermission, setLocationPermission] = useState<Location.PermissionStatus | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [address, setAddress] = useState<string | null>(null);
+  const [addressLoading, setAddressLoading] = useState(false);
+
+  // Get address from coordinates using OpenStreetMap Nominatim API
+  const getAddressFromCoordinates = useCallback(async (location: Location.LocationObject) => {
+    setAddressLoading(true);
+    try {
+      const { latitude, longitude } = location.coords;
+      console.log('Attempting reverse geocoding for:', latitude, longitude);
+
+      // Use OpenStreetMap Nominatim API (free, no API key required)
+      const nominatimUrl = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1`;
+
+      const response = await fetch(nominatimUrl, {
+        headers: {
+          'User-Agent': 'ParkFind-App/1.0' // Required by Nominatim
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      console.log('Nominatim API response:', data);
+
+      if (data && data.address) {
+        const addr = data.address;
+        let addressText = '';
+
+        // Try different address components in order of preference for Australian addresses
+        if (addr.suburb) {
+          addressText = addr.suburb;
+        } else if (addr.neighbourhood) {
+          addressText = addr.neighbourhood;
+        } else if (addr.quarter) {
+          addressText = addr.quarter;
+        } else if (addr.city_district) {
+          addressText = addr.city_district;
+        } else if (addr.city || addr.town || addr.village) {
+          addressText = addr.city || addr.town || addr.village;
+        } else if (addr.road) {
+          // If we have house number, include it
+          if (addr.house_number) {
+            addressText = `${addr.house_number} ${addr.road}`;
+          } else {
+            addressText = addr.road;
+          }
+        } else if (addr.postcode) {
+          addressText = `Postcode ${addr.postcode}`;
+        } else if (addr.state) {
+          addressText = addr.state;
+        }
+
+        console.log('Formatted address:', addressText);
+        setAddress(addressText || null);
+      } else {
+        console.log('No address data in response');
+        setAddress(null);
+      }
+    } catch (err) {
+      console.error('Reverse geocoding failed:', err);
+
+      // Fallback to Expo's built-in reverse geocoding
+      try {
+        console.log('Trying Expo reverse geocoding as fallback...');
+        const results = await Location.reverseGeocodeAsync({
+          latitude: location.coords.latitude,
+          longitude: location.coords.longitude,
+        });
+
+        if (results && results.length > 0) {
+          const result = results[0];
+          let addressText = '';
+
+          if (result.subregion) {
+            addressText = result.subregion;
+          } else if (result.city) {
+            addressText = result.city;
+          } else if (result.street) {
+            addressText = result.street;
+          }
+
+          setAddress(addressText || null);
+        } else {
+          setAddress(null);
+        }
+      } catch (fallbackErr) {
+        console.error('Fallback reverse geocoding also failed:', fallbackErr);
+        setAddress(null);
+      }
+    } finally {
+      setAddressLoading(false);
+    }
+  }, []);
 
   // Request location permissions and get user location
   const getUserLocation = useCallback(async () => {
@@ -52,6 +147,9 @@ export const UserLocationDisplay: React.FC<UserLocationDisplayProps> = ({
       console.log('Location obtained:', location);
       setUserLocation(location);
       onLocationUpdate?.(location);
+
+      // Get address for the location
+      getAddressFromCoordinates(location);
     } catch (err) {
       console.error('Error getting user location:', err);
       setError('Failed to get location');
@@ -76,9 +174,19 @@ export const UserLocationDisplay: React.FC<UserLocationDisplayProps> = ({
     getUserLocation();
   };
 
-  const formatLocationText = (location: Location.LocationObject): string => {
+  const formatLocationText = (location: Location.LocationObject): { lat: string, lng: string } => {
     const { latitude, longitude } = location.coords;
-    return `📍 ${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+    return {
+      lat: latitude.toFixed(4),
+      lng: longitude.toFixed(4)
+    };
+  };
+
+  const getAccuracyStatus = (accuracy: number): { text: string, color: string, icon: string } => {
+    if (accuracy <= 5) return { text: 'Excellent', color: colors.success, icon: '●' };
+    if (accuracy <= 15) return { text: 'Good', color: colors.info, icon: '●' };
+    if (accuracy <= 50) return { text: 'Fair', color: colors.warning, icon: '●' };
+    return { text: 'Poor', color: colors.error, icon: '●' };
   };
 
   if (locationPermission === 'denied') {
@@ -127,18 +235,43 @@ export const UserLocationDisplay: React.FC<UserLocationDisplayProps> = ({
     return null;
   }
 
+  const locationData = formatLocationText(userLocation);
+  const accuracy = Math.round(userLocation.coords.accuracy || 0);
+
   return (
     <View style={styles.container}>
       <View style={styles.locationContainer}>
         <View style={styles.locationInfo}>
-          <Text style={styles.locationLabel}>Your Location</Text>
-          <Text style={styles.locationText}>
-            {formatLocationText(userLocation)}
-          </Text>
-          <Text style={styles.accuracyText}>
-            Accuracy: ±{Math.round(userLocation.coords.accuracy || 0)}m
-          </Text>
+          <View style={styles.locationHeader}>
+            <View style={styles.locationIcon}>
+              <View style={styles.locationPin}>
+                <View style={styles.locationPinHead} />
+                <View style={styles.locationPinTail} />
+              </View>
+            </View>
+            <View style={styles.locationDetails}>
+              {(address || addressLoading) ? (
+                <>
+                  <Text style={styles.addressText}>
+                    {addressLoading ? 'Getting address...' : address}
+                  </Text>
+                  <Text style={styles.coordinatesText}>
+                    {locationData.lat}, {locationData.lng}
+                  </Text>
+                </>
+              ) : (
+                <Text style={styles.addressText}>
+                  {locationData.lat}, {locationData.lng}
+                </Text>
+              )}
+            </View>
+            <View style={styles.accuracyContainer}>
+              <View style={styles.accuracyDot} />
+              <Text style={styles.accuracyText}>±{accuracy}m</Text>
+            </View>
+          </View>
         </View>
+
         {showRefreshButton && (
           <TouchableOpacity
             style={styles.refreshButton}
@@ -174,23 +307,85 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
   locationInfo: {
     flex: 1,
   },
-  locationLabel: {
+  locationHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    width: '100%',
+  },
+  locationIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.backgroundTertiary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+    borderWidth: 2,
+    borderColor: colors.border,
+  },
+  locationPin: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  locationPinHead: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: colors.error,
+    borderWidth: 2,
+    borderColor: colors.buttonText,
+    shadowColor: colors.error,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.3,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  locationPinTail: {
+    width: 2,
+    height: 6,
+    backgroundColor: colors.error,
+    marginTop: -1,
+    borderRadius: 1,
+  },
+  locationDetails: {
+    flex: 1,
+    paddingTop: 2,
+    paddingRight: 12,
+  },
+  addressText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.text,
+    marginBottom: 4,
+    letterSpacing: 0.2,
+  },
+  coordinatesText: {
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '500',
     color: colors.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    marginBottom: 6,
+    opacity: 0.8,
+  },
+  accuracyContainer: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    paddingTop: 2,
+  },
+  accuracyDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.success,
     marginBottom: 4,
   },
-  locationText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.text,
-    marginBottom: 2,
-  },
   accuracyText: {
-    fontSize: 12,
+    fontSize: 10,
     color: colors.textSecondary,
+    fontWeight: '600',
+    textAlign: 'center',
+    opacity: 0.8,
   },
   refreshButton: {
     backgroundColor: '#3498db',
