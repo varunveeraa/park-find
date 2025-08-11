@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, AppState, Dimensions, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
@@ -52,6 +53,7 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
   const [showSignTypeDropdown, setShowSignTypeDropdown] = useState(false);
   const [showHoursDropdown, setShowHoursDropdown] = useState(false);
   const [showSortDropdown, setShowSortDropdown] = useState(false);
+  const [favouriteIds, setFavouriteIds] = useState<Set<string>>(new Set());
 
   // Determine if we should use horizontal layout (web/tablet)
   const isWideScreen = screenData.width >= 768;
@@ -198,6 +200,64 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
       setSelectedMarker(marker);
     }
   };
+
+  // Load favourites from AsyncStorage
+  const loadFavourites = useCallback(async () => {
+    try {
+      const storedFavourites = await AsyncStorage.getItem('parkingFavourites');
+      if (storedFavourites) {
+        const favourites = JSON.parse(storedFavourites);
+        const ids = new Set<string>(favourites.map((fav: any) => fav.id as string));
+        setFavouriteIds(ids);
+      }
+    } catch (error) {
+      console.error('Error loading favourites:', error);
+    }
+  }, []);
+
+  // Add/remove favourite
+  const toggleFavourite = useCallback(async (marker: EnhancedParkingSensorMarker) => {
+    try {
+      const storedFavourites = await AsyncStorage.getItem('parkingFavourites');
+      let favourites = storedFavourites ? JSON.parse(storedFavourites) : [];
+
+      const existingIndex = favourites.findIndex((fav: any) => fav.id === marker.id);
+
+      if (existingIndex >= 0) {
+        // Remove from favourites
+        favourites.splice(existingIndex, 1);
+        setFavouriteIds(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(marker.id);
+          return newSet;
+        });
+        Alert.alert('Removed', 'Parking spot removed from favourites');
+      } else {
+        // Add to favourites
+        const favouriteSpot = {
+          id: marker.id,
+          title: marker.title,
+          streetAddress: marker.streetAddress,
+          restriction: marker.description || 'No restriction info',
+          isOccupied: marker.isOccupied,
+          dateAdded: new Date().toISOString(),
+        };
+        favourites.push(favouriteSpot);
+        setFavouriteIds(prev => new Set(prev).add(marker.id));
+        Alert.alert('Added', 'Parking spot added to favourites');
+      }
+
+      await AsyncStorage.setItem('parkingFavourites', JSON.stringify(favourites));
+    } catch (error) {
+      console.error('Error toggling favourite:', error);
+      Alert.alert('Error', 'Failed to update favourites');
+    }
+  }, []);
+
+  // Load favourites on component mount
+  useEffect(() => {
+    loadFavourites();
+  }, [loadFavourites]);
 
   // Close all dropdowns
   const closeAllDropdowns = () => {
@@ -792,13 +852,26 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
                       }
                     </Text>
                     <View style={styles.headerRight}>
-                      <View style={[
-                        styles.statusBadge,
-                        marker.isOccupied ? styles.occupiedBadge : styles.availableBadge
-                      ]}>
-                        <Text style={styles.statusLabel}>
-                          {marker.isOccupied ? 'OCCUPIED' : 'AVAILABLE'}
-                        </Text>
+                      <View style={styles.topRightRow}>
+                        <View style={[
+                          styles.statusBadge,
+                          marker.isOccupied ? styles.occupiedBadge : styles.availableBadge
+                        ]}>
+                          <Text style={styles.statusLabel}>
+                            {marker.isOccupied ? 'OCCUPIED' : 'AVAILABLE'}
+                          </Text>
+                        </View>
+                        <TouchableOpacity
+                          style={styles.heartButton}
+                          onPress={() => toggleFavourite(marker)}
+                        >
+                          <Text style={[
+                            styles.heartIcon,
+                            favouriteIds.has(marker.id) ? styles.heartFilled : styles.heartEmpty
+                          ]}>
+                            {favouriteIds.has(marker.id) ? '❤️' : '🤍'}
+                          </Text>
+                        </TouchableOpacity>
                       </View>
                       <Text style={styles.clickHint}>
                         {selectedMarker?.id === marker.id ? '👆 Tap to deselect' : '👆 Tap to view on map'}
@@ -1255,6 +1328,23 @@ const styles = StyleSheet.create({
   },
   headerRight: {
     alignItems: 'flex-end',
+  },
+  topRightRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  heartButton: {
+    padding: 4,
+  },
+  heartIcon: {
+    fontSize: 20,
+  },
+  heartFilled: {
+    // Red heart emoji already colored
+  },
+  heartEmpty: {
+    // White heart emoji already colored
   },
   statusBadge: {
     paddingHorizontal: 12,
