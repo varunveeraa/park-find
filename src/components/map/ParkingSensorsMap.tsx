@@ -1,8 +1,10 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, AppState, Dimensions, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { parkingSensorsApi } from '../../services/api/parkingSensorsApi';
+import FavoritesService, { favoritesService } from '../../services/database/favoritesService';
+import { loggingService } from '../../services/database/loggingService';
+import { webDatabaseService } from '../../services/database/webDatabaseService';
 import { ApiError, EnhancedParkingSensorMarker } from '../../types';
 import { calculateDistance, calculateDrivingTime, formatDistance, formatDrivingTime } from '../../utils/distance';
 import { UserLocationDisplay } from '../location/UserLocationDisplay';
@@ -65,11 +67,18 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
   const isWideScreen = screenData.width >= 768;
 
   // Handle user location updates from UserLocationDisplay component
-  const handleLocationUpdate = useCallback((location: Location.LocationObject | null) => {
+  const handleLocationUpdate = useCallback(async (location: Location.LocationObject | null) => {
     setUserLocation(location);
 
-    // Update region to user's location if available
+    // Log GPS coordinates when location is accessed
     if (location) {
+      try {
+        await loggingService.logGpsCoordinates(location, 'user_location_update');
+      } catch (error) {
+        console.warn('Failed to log GPS coordinates:', error);
+      }
+
+      // Update region to user's location if available
       setRegion({
         latitude: location.coords.latitude,
         longitude: location.coords.longitude,
@@ -123,6 +132,22 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
     });
 
     return () => subscription?.remove();
+  }, []);
+
+  // Initialize database system
+  useEffect(() => {
+    const initializeDatabase = async () => {
+      try {
+        if (Platform.OS === 'web') {
+          await webDatabaseService.initialize();
+        }
+        console.log('Database initialized in ParkingSensorsMap');
+      } catch (error) {
+        console.error('Failed to initialize database:', error);
+      }
+    };
+
+    initializeDatabase();
   }, []);
 
   // No longer needed - UserLocationDisplay component handles location setup
@@ -306,15 +331,11 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
     }
   };
 
-  // Load favourites from AsyncStorage
+  // Load favourites from SQLite database
   const loadFavourites = useCallback(async () => {
     try {
-      const storedFavourites = await AsyncStorage.getItem('parkingFavourites');
-      if (storedFavourites) {
-        const favourites = JSON.parse(storedFavourites);
-        const ids = new Set<string>(favourites.map((fav: any) => fav.id as string));
-        setFavouriteIds(ids);
-      }
+      const favoriteIds = await favoritesService.getFavoriteIds();
+      setFavouriteIds(favoriteIds);
     } catch (error) {
       console.error('Error loading favourites:', error);
     }
@@ -323,14 +344,11 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
   // Add/remove favourite
   const toggleFavourite = useCallback(async (marker: EnhancedParkingSensorMarker) => {
     try {
-      const storedFavourites = await AsyncStorage.getItem('parkingFavourites');
-      let favourites = storedFavourites ? JSON.parse(storedFavourites) : [];
+      const isFavorite = await favoritesService.isFavorite(marker.id);
 
-      const existingIndex = favourites.findIndex((fav: any) => fav.id === marker.id);
-
-      if (existingIndex >= 0) {
+      if (isFavorite) {
         // Remove from favourites
-        favourites.splice(existingIndex, 1);
+        await favoritesService.removeFavorite(marker.id);
         setFavouriteIds(prev => {
           const newSet = new Set(prev);
           newSet.delete(marker.id);
@@ -339,20 +357,11 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
         Alert.alert('Removed', 'Parking spot removed from favourites');
       } else {
         // Add to favourites
-        const favouriteSpot = {
-          id: marker.id,
-          title: marker.title,
-          streetAddress: marker.streetAddress,
-          restriction: marker.description || 'No restriction info',
-          isOccupied: marker.isOccupied,
-          dateAdded: new Date().toISOString(),
-        };
-        favourites.push(favouriteSpot);
+        const favoriteInput = FavoritesService.markerToFavoriteInput(marker);
+        await favoritesService.addFavorite(favoriteInput);
         setFavouriteIds(prev => new Set(prev).add(marker.id));
         Alert.alert('Added', 'Parking spot added to favourites');
       }
-
-      await AsyncStorage.setItem('parkingFavourites', JSON.stringify(favourites));
     } catch (error) {
       console.error('Error toggling favourite:', error);
       Alert.alert('Error', 'Failed to update favourites');

@@ -1,40 +1,44 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  SafeAreaView,
-  StatusBar,
-  Alert,
-} from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { IconSymbol } from '@/components/ui/IconSymbol';
-
-interface FavouriteSpot {
-  id: string;
-  title: string;
-  streetAddress: string;
-  restriction: string;
-  isOccupied: boolean;
-  dateAdded: string;
-}
+import { FavoriteSpot, favoritesService } from '@/src/services/database/favoritesService';
+import { webDatabaseService } from '@/src/services/database/webDatabaseService';
+import React, { useEffect, useState } from 'react';
+import {
+    Alert,
+    Platform,
+    SafeAreaView,
+    ScrollView,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
+} from 'react-native';
 
 export default function FavouritesScreen() {
-  const [favourites, setFavourites] = useState<FavouriteSpot[]>([]);
+  const [favourites, setFavourites] = useState<FavoriteSpot[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadFavourites();
+    initializeAndLoadFavourites();
   }, []);
+
+  const initializeAndLoadFavourites = async () => {
+    try {
+      // Initialize database first (only for web)
+      if (Platform.OS === 'web') {
+        await webDatabaseService.initialize();
+      }
+      await loadFavourites();
+    } catch (error) {
+      console.error('Error initializing database:', error);
+      setLoading(false);
+    }
+  };
 
   const loadFavourites = async () => {
     try {
-      const storedFavourites = await AsyncStorage.getItem('parkingFavourites');
-      if (storedFavourites) {
-        setFavourites(JSON.parse(storedFavourites));
-      }
+      const favorites = await favoritesService.getAllFavorites();
+      setFavourites(favorites);
     } catch (error) {
       console.error('Error loading favourites:', error);
     } finally {
@@ -53,9 +57,9 @@ export default function FavouritesScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
+              await favoritesService.removeFavorite(id);
               const updatedFavourites = favourites.filter(fav => fav.id !== id);
               setFavourites(updatedFavourites);
-              await AsyncStorage.setItem('parkingFavourites', JSON.stringify(updatedFavourites));
             } catch (error) {
               console.error('Error removing favourite:', error);
             }
@@ -76,8 +80,8 @@ export default function FavouritesScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
+              await favoritesService.clearAllFavorites();
               setFavourites([]);
-              await AsyncStorage.removeItem('parkingFavourites');
             } catch (error) {
               console.error('Error clearing favourites:', error);
             }
