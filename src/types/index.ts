@@ -80,6 +80,10 @@ export interface EnhancedParkingSensorMarker extends ParkingSensorMarker {
   streetSegment?: ParkingZoneStreetSegment;
   streetAddress?: string;
   distanceFromUser?: number; // Distance in kilometers
+  drivingTimeFromUser?: number; // Driving time in minutes
+  walkingTimeFromUser?: number; // Walking time in minutes (kept for backward compatibility)
+  distanceCalculationMethod?: 'straight-line' | 'routing' | 'hybrid';
+  isDistanceEstimate?: boolean;
 }
 
 // Error types

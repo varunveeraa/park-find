@@ -7,6 +7,19 @@ export interface Coordinate {
   longitude: number;
 }
 
+export interface RouteInfo {
+  distance: number; // in kilometers
+  duration: number; // in minutes
+  geometry?: number[][]; // route coordinates for visualization
+  instructions?: string[]; // turn-by-turn directions
+}
+
+export interface RoutingOptions {
+  profile?: 'foot-walking' | 'driving-car' | 'cycling-regular';
+  useCache?: boolean;
+  fallbackToStraightLine?: boolean;
+}
+
 /**
  * Calculate the distance between two coordinates using the Haversine formula
  * @param coord1 First coordinate (latitude, longitude)
@@ -58,7 +71,17 @@ export function formatDistance(distanceKm: number): string {
 }
 
 /**
- * Calculate walking time estimate based on distance
+ * Calculate driving time estimate based on distance
+ * @param distanceKm Distance in kilometers
+ * @param drivingSpeedKmh Driving speed in km/h (default: 30 km/h for city driving)
+ * @returns Driving time in minutes
+ */
+export function calculateDrivingTime(distanceKm: number, drivingSpeedKmh: number = 30): number {
+  return Math.round((distanceKm / drivingSpeedKmh) * 60);
+}
+
+/**
+ * Calculate walking time estimate based on distance (kept for backward compatibility)
  * @param distanceKm Distance in kilometers
  * @param walkingSpeedKmh Walking speed in km/h (default: 5 km/h)
  * @returns Walking time in minutes
@@ -68,7 +91,28 @@ export function calculateWalkingTime(distanceKm: number, walkingSpeedKmh: number
 }
 
 /**
- * Format walking time for display
+ * Format driving time for display
+ * @param minutes Driving time in minutes
+ * @returns Formatted time string
+ */
+export function formatDrivingTime(minutes: number): string {
+  if (minutes < 1) {
+    return '<1 min drive';
+  } else if (minutes < 60) {
+    return `${minutes} min drive`;
+  } else {
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = minutes % 60;
+    if (remainingMinutes === 0) {
+      return `${hours}h drive`;
+    } else {
+      return `${hours}h ${remainingMinutes}m drive`;
+    }
+  }
+}
+
+/**
+ * Format walking time for display (kept for backward compatibility)
  * @param minutes Walking time in minutes
  * @returns Formatted time string
  */
@@ -86,4 +130,71 @@ export function formatWalkingTime(minutes: number): string {
       return `${hours}h ${remainingMinutes}m walk`;
     }
   }
+}
+
+/**
+ * Enhanced distance calculation that can use routing or straight-line distance
+ * @param from Starting coordinate
+ * @param to Destination coordinate
+ * @param useRouting Whether to use road routing (requires routing service)
+ * @returns Promise<RouteInfo> with distance, duration, and optional route geometry
+ */
+export async function calculateEnhancedDistance(
+  from: Coordinate,
+  to: Coordinate,
+  useRouting: boolean = false
+): Promise<RouteInfo> {
+  if (!useRouting) {
+    // Use straight-line distance calculation
+    const distance = calculateDistance(from, to);
+    const duration = calculateDrivingTime(distance);
+
+    return {
+      distance,
+      duration,
+    };
+  }
+
+  // Dynamic import to avoid circular dependencies
+  const { routingService } = await import('../services/routing/routingService');
+
+  return routingService.calculateRoute(from, to, {
+    profile: 'driving-car',
+    useCache: true,
+    fallbackToStraightLine: true,
+  });
+}
+
+/**
+ * Batch calculate distances for multiple destinations
+ * @param from Starting coordinate
+ * @param destinations Array of destination coordinates
+ * @param useRouting Whether to use road routing
+ * @returns Promise<RouteInfo[]> Array of route information
+ */
+export async function calculateBatchDistances(
+  from: Coordinate,
+  destinations: Coordinate[],
+  useRouting: boolean = false
+): Promise<RouteInfo[]> {
+  // Process in batches to avoid overwhelming the API
+  const BATCH_SIZE = 5;
+  const results: RouteInfo[] = [];
+
+  for (let i = 0; i < destinations.length; i += BATCH_SIZE) {
+    const batch = destinations.slice(i, i + BATCH_SIZE);
+    const batchPromises = batch.map(destination =>
+      calculateEnhancedDistance(from, destination, useRouting)
+    );
+
+    const batchResults = await Promise.all(batchPromises);
+    results.push(...batchResults);
+
+    // Small delay between batches to respect rate limits
+    if (i + BATCH_SIZE < destinations.length && useRouting) {
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+  }
+
+  return results;
 }

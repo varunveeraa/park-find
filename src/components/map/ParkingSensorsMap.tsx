@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ActivityIndicator, Alert, AppState, Dimensions, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { parkingSensorsApi } from '../../services/api/parkingSensorsApi';
 import { ApiError, EnhancedParkingSensorMarker } from '../../types';
-import { calculateDistance, calculateWalkingTime, formatDistance, formatWalkingTime } from '../../utils/distance';
+import { calculateDistance, calculateDrivingTime, formatDistance, formatDrivingTime } from '../../utils/distance';
 import { UserLocationDisplay } from '../location/UserLocationDisplay';
 
 interface Region {
@@ -47,6 +47,10 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
   const [filterType, setFilterType] = useState<'all' | 'unrestricted' | 'restricted'>('all');
   const [signTypeFilter, setSignTypeFilter] = useState<'all' | '2P' | 'MP1P' | '4P' | '1P' | 'other'>('all');
   const [hoursFilter, setHoursFilter] = useState<'all' | 'morning' | 'business' | 'evening' | 'weekend'>('all');
+  const [useRouting, setUseRouting] = useState<boolean>(false);
+  const [distanceCalculating, setDistanceCalculating] = useState<boolean>(false);
+  const [routingStats, setRoutingStats] = useState<{ enabled: boolean; apiConfigured: boolean } | null>(null);
+  const [markersWithDistances, setMarkersWithDistances] = useState<EnhancedParkingSensorMarker[]>([]);
 
   const [sortType, setSortType] = useState<'availability' | 'name' | 'recent' | 'distance'>('availability');
   const [selectedMarker, setSelectedMarker] = useState<EnhancedParkingSensorMarker | null>(null);
@@ -166,6 +170,119 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
       subscription?.remove();
     };
   }, [autoRefresh, refreshInterval, fetchParkingData]);
+
+  // Initialize routing configuration
+  useEffect(() => {
+    const initializeRouting = async () => {
+      try {
+        const stats = hybridDistanceCalculator.getStats();
+        setRoutingStats({
+          enabled: stats.routingEnabled,
+          apiConfigured: stats.apiKeyConfigured,
+        });
+
+        // Enable routing by default if API is configured
+        if (stats.routingEnabled && stats.apiKeyConfigured) {
+          setUseRouting(true);
+        }
+      } catch (error) {
+        console.warn('Failed to initialize routing:', error);
+      }
+    };
+
+    initializeRouting();
+  }, []);
+
+  // Calculate distances when markers or user location changes
+  useEffect(() => {
+    const calculateDistances = async () => {
+      if (!userLocation || markers.length === 0) {
+        setMarkersWithDistances(markers);
+        return;
+      }
+
+      setDistanceCalculating(true);
+
+      try {
+        const userCoord = {
+          latitude: userLocation.coords.latitude,
+          longitude: userLocation.coords.longitude,
+        };
+
+        if (useRouting && routingStats?.enabled) {
+          // Use hybrid distance calculator for routing
+          const destinations = markers.map(marker => ({
+            coordinate: {
+              latitude: marker.coordinate.latitude,
+              longitude: marker.coordinate.longitude,
+            },
+            id: marker.id,
+          }));
+
+          const distanceResults = await hybridDistanceCalculator.calculateBatchDistances(
+            userCoord,
+            destinations,
+            {
+              useRouting: true,
+              prioritizeSpeed: false,
+              includeGeometry: false,
+            }
+          );
+
+          const markersWithDistanceInfo = markers.map(marker => {
+            const distanceResult = distanceResults.get(marker.id);
+            return {
+              ...marker,
+              distanceFromUser: distanceResult?.distance,
+              walkingTimeFromUser: distanceResult?.duration,
+              distanceCalculationMethod: distanceResult?.calculationMethod,
+              isDistanceEstimate: distanceResult?.isEstimate,
+            };
+          });
+
+          setMarkersWithDistances(markersWithDistanceInfo);
+        } else {
+          // Use simple straight-line distance calculation
+          const markersWithSimpleDistance = markers.map(marker => ({
+            ...marker,
+            distanceFromUser: calculateDistance(userCoord, {
+              latitude: marker.coordinate.latitude,
+              longitude: marker.coordinate.longitude,
+            }),
+            drivingTimeFromUser: calculateDrivingTime(calculateDistance(userCoord, {
+              latitude: marker.coordinate.latitude,
+              longitude: marker.coordinate.longitude,
+            })),
+            distanceCalculationMethod: 'straight-line' as const,
+            isDistanceEstimate: true,
+          }));
+
+          setMarkersWithDistances(markersWithSimpleDistance);
+        }
+      } catch (error) {
+        console.error('Error calculating distances:', error);
+        // Fallback to simple distance calculation
+        const markersWithSimpleDistance = markers.map(marker => {
+          const distance = calculateDistance(
+            { latitude: userLocation.coords.latitude, longitude: userLocation.coords.longitude },
+            { latitude: marker.coordinate.latitude, longitude: marker.coordinate.longitude }
+          );
+          return {
+            ...marker,
+            distanceFromUser: distance,
+            drivingTimeFromUser: calculateDrivingTime(distance),
+            distanceCalculationMethod: 'straight-line' as const,
+            isDistanceEstimate: true,
+          };
+        });
+        setMarkersWithDistances(markersWithSimpleDistance);
+      } finally {
+        setDistanceCalculating(false);
+      }
+    };
+
+    calculateDistances();
+  }, [markers, userLocation, useRouting, routingStats]);
 
   const handleRegionChangeComplete = (newRegion: Region) => {
     setRegion(newRegion);
@@ -344,22 +461,12 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
 
   // Filter and sort markers with memoization
   const filteredAndSortedMarkers = useMemo(() => {
-    let filteredMarkers = markers.filter(marker =>
+    // Use markersWithDistances which already have distance calculations
+    let filteredMarkers = markersWithDistances.filter(marker =>
       marker.streetAddress && // Must have address
       marker.streetAddress !== 'Address not available' && // Exclude "Address not available"
       !marker.streetAddress.includes('Address not available') // Extra safety check
     );
-
-    // Calculate distances from user location if available
-    if (userLocation) {
-      filteredMarkers = filteredMarkers.map(marker => ({
-        ...marker,
-        distanceFromUser: calculateDistance(
-          { latitude: userLocation.coords.latitude, longitude: userLocation.coords.longitude },
-          { latitude: marker.coordinate.latitude, longitude: marker.coordinate.longitude }
-        )
-      }));
-    }
 
     // Apply search filter
     if (searchQuery.trim()) {
@@ -497,7 +604,7 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
 
     console.log(`Final filtered results: ${filteredMarkers.length} markers`);
     return filteredMarkers;
-  }, [markers, searchQuery, filterType, signTypeFilter, hoursFilter, sortType, userLocation]);
+  }, [markersWithDistances, searchQuery, filterType, signTypeFilter, hoursFilter, sortType, userLocation]);
 
   const generateMapHTML = () => {
     const markersData = markers.map(marker => ({
@@ -734,6 +841,40 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
             showRefreshButton={true}
           />
 
+          {/* Routing Toggle */}
+          {routingStats && (
+            <View style={styles.routingContainer}>
+              <View style={styles.routingToggleContainer}>
+                <Text style={styles.routingLabel}>
+                  🗺️ Road Routing {routingStats.apiConfigured ? '' : '(API key required)'}
+                </Text>
+                <TouchableOpacity
+                  style={[
+                    styles.routingToggle,
+                    useRouting && routingStats.enabled ? styles.routingToggleActive : styles.routingToggleInactive
+                  ]}
+                  onPress={() => setUseRouting(!useRouting)}
+                  disabled={!routingStats.enabled}
+                >
+                  <Text style={styles.routingToggleText}>
+                    {useRouting && routingStats.enabled ? 'ON' : 'OFF'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              {distanceCalculating && (
+                <View style={styles.calculatingContainer}>
+                  <ActivityIndicator size="small" color="#3498db" />
+                  <Text style={styles.calculatingText}>Calculating routes...</Text>
+                </View>
+              )}
+              {useRouting && routingStats.enabled && (
+                <Text style={styles.routingHelpText}>
+                  Using road routing for accurate driving distances and times
+                </Text>
+              )}
+            </View>
+          )}
+
           {/* Search Bar */}
           <View style={styles.searchContainer}>
             <View style={styles.searchInputContainer}>
@@ -866,14 +1007,18 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
                           `Zone ${marker.zoneNumber}`
                         }
                       </Text>
-                      {/* Distance and Walking Time */}
+                      {/* Distance and Driving Time */}
                       {marker.distanceFromUser !== undefined && (
                         <View style={styles.distanceContainer}>
                           <Text style={styles.distanceText}>
                             📍 {formatDistance(marker.distanceFromUser)}
+                            {marker.isDistanceEstimate && ' ~'}
                           </Text>
-                          <Text style={styles.walkingTimeText}>
-                            🚶 {formatWalkingTime(calculateWalkingTime(marker.distanceFromUser))}
+                          <Text style={styles.drivingTimeText}>
+                            � {formatDrivingTime(
+                              marker.drivingTimeFromUser || calculateDrivingTime(marker.distanceFromUser)
+                            )}
+                            {marker.distanceCalculationMethod === 'routing' && ' 🗺️'}
                           </Text>
                         </View>
                       )}
@@ -1371,6 +1516,11 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#7f8c8d',
   },
+  drivingTimeText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#7f8c8d',
+  },
   headerRight: {
     alignItems: 'flex-end',
   },
@@ -1628,5 +1778,61 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#999',
     textAlign: 'center',
+  },
+  // Routing styles
+  routingContainer: {
+    backgroundColor: '#f8f9fa',
+    padding: 12,
+    marginHorizontal: 16,
+    marginVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+  },
+  routingToggleContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  routingLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#2c3e50',
+    flex: 1,
+  },
+  routingToggle: {
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 16,
+    minWidth: 50,
+    alignItems: 'center',
+  },
+  routingToggleActive: {
+    backgroundColor: '#27ae60',
+  },
+  routingToggleInactive: {
+    backgroundColor: '#95a5a6',
+  },
+  routingToggleText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  calculatingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  calculatingText: {
+    marginLeft: 8,
+    fontSize: 12,
+    color: '#3498db',
+    fontStyle: 'italic',
+  },
+  routingHelpText: {
+    fontSize: 11,
+    color: '#7f8c8d',
+    fontStyle: 'italic',
   },
 });
