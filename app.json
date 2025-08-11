@@ -33,6 +33,20 @@
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"
         }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow Park Find to use your location to find nearby parking spots.",
+          "locationAlwaysPermission": "Allow Park Find to use your location to find nearby parking spots.",
+          "locationWhenInUsePermission": "Allow Park Find to use your location to find nearby parking spots."
+        }
+      ],
+      [
+        "expo-maps",
+        {
+          "googleMapsApiKey": "AIzaSyDummy_Key_For_Development"
+        }
       ]
     ],
     "experiments": {
