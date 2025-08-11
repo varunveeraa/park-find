@@ -1,13 +1,17 @@
 import {
     ApiError,
+    EnhancedParkingSensorMarker,
     ParkingSensorApiResponse,
     ParkingSensorMarker,
     ParkingSensorQueryParams,
-    ParkingSensorRecord
+    ParkingSensorRecord,
+    ParkingZoneSignPlate,
+    ParkingZoneSignPlatesApiResponse
 } from '../../types';
 
 const BASE_URL = 'https://data.melbourne.vic.gov.au/api/explore/v2.1/catalog/datasets/on-street-parking-bay-sensors/records';
 const SIGN_PLATES_URL = 'https://data.melbourne.vic.gov.au/api/explore/v2.1/catalog/datasets/sign-plates-located-in-each-parking-zone/records';
+const STREET_SEGMENTS_URL = 'https://data.melbourne.vic.gov.au/api/explore/v2.1/catalog/datasets/parking-zones-linked-to-street-segments/records';
 
 export class ParkingSensorsApiService {
   private static instance: ParkingSensorsApiService;
@@ -272,6 +276,98 @@ export class ParkingSensorsApiService {
   }
 
   /**
+   * Fetch parking zone street segments data
+   */
+  async fetchParkingZoneStreetSegments(params: ParkingSensorQueryParams = {}): Promise<ParkingZoneStreetSegmentsApiResponse> {
+    try {
+      const queryParams = new URLSearchParams();
+
+      // Set default parameters with API limits in mind
+      const defaultParams: ParkingSensorQueryParams = {
+        limit: 100, // API maximum is 100
+        ...params
+      };
+
+      // Ensure limit doesn't exceed API maximum
+      if (defaultParams.limit && defaultParams.limit > 100) {
+        defaultParams.limit = 100;
+      }
+
+      // Build query string
+      Object.entries(defaultParams).forEach(([key, value]) => {
+        if (value !== undefined) {
+          queryParams.append(key, value.toString());
+        }
+      });
+
+      const url = `${STREET_SEGMENTS_URL}?${queryParams.toString()}`;
+      console.log('Fetching street segments data from:', url);
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Street Segments API Error:', response.status, errorText);
+        const error: ApiError = {
+          message: `HTTP error! status: ${response.status}. ${errorText}`,
+          status: response.status,
+          code: 'HTTP_ERROR'
+        };
+        throw error;
+      }
+
+      const data: ParkingZoneStreetSegmentsApiResponse = await response.json();
+      return data;
+    } catch (error) {
+      if (error && typeof error === 'object' && 'message' in error) {
+        throw error;
+      }
+
+      const apiError: ApiError = {
+        message: error instanceof Error ? error.message : 'Unknown error occurred',
+        code: 'FETCH_ERROR'
+      };
+      throw apiError;
+    }
+  }
+
+  /**
+   * Fetch multiple pages of street segments data
+   */
+  async fetchMultiplePagesStreetSegments(totalRecords: number = 800): Promise<ParkingZoneStreetSegmentsApiResponse> {
+    const pages = Math.ceil(totalRecords / 100);
+    const allResults: ParkingZoneStreetSegment[] = [];
+    let totalCount = 0;
+
+    for (let i = 0; i < pages; i++) {
+      const offset = i * 100;
+      const response = await this.fetchParkingZoneStreetSegments({
+        limit: 100,
+        offset,
+        order_by: 'parkingzone asc'
+      });
+
+      allResults.push(...response.results);
+      totalCount = response.total_count;
+
+      // If we got fewer results than expected, we've reached the end
+      if (response.results.length < 100) {
+        break;
+      }
+    }
+
+    return {
+      total_count: totalCount,
+      results: allResults
+    };
+  }
+
+  /**
    * Get current parking restriction for a zone based on current time
    */
   getCurrentRestriction(restrictions: ParkingZoneSignPlate[]): string {
@@ -310,7 +406,7 @@ export class ParkingSensorsApiService {
   }
 
   /**
-   * Convert API records to enhanced markers with restriction info
+   * Convert API records to enhanced markers with restriction and street info
    */
   async convertToEnhancedMarkers(records: ParkingSensorRecord[]): Promise<EnhancedParkingSensorMarker[]> {
     // Get all unique zone numbers from the records
@@ -325,6 +421,15 @@ export class ParkingSensorsApiService {
       console.warn('Failed to fetch sign plates data:', error);
     }
 
+    // Fetch street segments data for these zones
+    let allStreetSegments: ParkingZoneStreetSegment[] = [];
+    try {
+      const streetSegmentsResponse = await this.fetchMultiplePagesStreetSegments(800);
+      allStreetSegments = streetSegmentsResponse.results;
+    } catch (error) {
+      console.warn('Failed to fetch street segments data:', error);
+    }
+
     // Group sign plates by parking zone
     const signPlatesByZone = allSignPlates.reduce((acc, plate) => {
       if (!acc[plate.parkingzone]) {
@@ -334,10 +439,27 @@ export class ParkingSensorsApiService {
       return acc;
     }, {} as Record<number, ParkingZoneSignPlate[]>);
 
+    // Group street segments by parking zone
+    const streetSegmentsByZone = allStreetSegments.reduce((acc, segment) => {
+      if (!acc[segment.parkingzone]) {
+        acc[segment.parkingzone] = [];
+      }
+      acc[segment.parkingzone].push(segment);
+      return acc;
+    }, {} as Record<number, ParkingZoneStreetSegment[]>);
+
     return records.map((record): EnhancedParkingSensorMarker => {
       const restrictions = signPlatesByZone[record.zone_number] || [];
+      const streetSegments = streetSegmentsByZone[record.zone_number] || [];
+      const streetSegment = streetSegments[0]; // Take the first segment for this zone
+
       const currentRestriction = restrictions.length > 0 ? this.getCurrentRestriction(restrictions) : 'No restriction data';
       const isRestricted = !currentRestriction.includes('No restrictions');
+
+      // Create street address from segment data
+      const streetAddress = streetSegment
+        ? `${streetSegment.onstreet} (${streetSegment.streetfrom} to ${streetSegment.streetto})`
+        : 'Address not available';
 
       return {
         id: `sensor-${record.kerbsideid}`,
@@ -346,7 +468,7 @@ export class ParkingSensorsApiService {
           longitude: record.location.lon,
         },
         title: `Zone ${record.zone_number}`,
-        description: `Status: ${record.status_description}\nRestriction: ${currentRestriction}\nLast updated: ${new Date(record.status_timestamp).toLocaleString()}`,
+        description: `Status: ${record.status_description}\nLocation: ${streetAddress}\nRestriction: ${currentRestriction}\nLast updated: ${new Date(record.status_timestamp).toLocaleString()}`,
         isOccupied: record.status_description === 'Present',
         lastUpdated: new Date(record.status_timestamp),
         zoneNumber: record.zone_number,
@@ -354,6 +476,8 @@ export class ParkingSensorsApiService {
         restrictions,
         currentRestriction,
         isRestricted,
+        streetSegment,
+        streetAddress,
       };
     });
   }

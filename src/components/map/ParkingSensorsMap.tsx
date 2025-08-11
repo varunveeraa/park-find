@@ -172,7 +172,8 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
       description: marker.description,
       color: marker.isOccupied ? '#FF6B6B' : '#4ECDC4',
       restriction: marker.currentRestriction || 'No restriction data',
-      isRestricted: marker.isRestricted || false
+      isRestricted: marker.isRestricted || false,
+      streetAddress: marker.streetAddress || 'Address not available'
     }));
 
     return `
@@ -255,9 +256,10 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
                 fillOpacity: 0.8
               }).addTo(map);
 
-              // Add popup with restriction info
+              // Add popup with street address and restriction info
               const popupContent = '<div>' +
                 '<h4>' + markerData.title + '</h4>' +
+                '<p><strong>Location:</strong> ' + markerData.streetAddress + '</p>' +
                 '<p>' + markerData.description + '</p>' +
                 '<p><strong>Restriction:</strong> ' + markerData.restriction + '</p>' +
                 (markerData.isRestricted ? '<p style="color: #FF8C00;">⚠️ Currently restricted</p>' : '<p style="color: #4ECDC4;">✅ No active restrictions</p>') +
@@ -361,6 +363,11 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
                   <Text style={styles.sensorStatus}>
                     {marker.isOccupied ? '🔴 Occupied' : '🟢 Available'}
                   </Text>
+                  {marker.streetAddress && (
+                    <Text style={styles.sensorAddress}>
+                      📍 {marker.streetAddress}
+                    </Text>
+                  )}
                   {marker.currentRestriction && (
                     <Text style={[
                       styles.sensorRestriction,
@@ -370,7 +377,7 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
                     </Text>
                   )}
                   <Text style={styles.sensorLocation}>
-                    📍 {marker.coordinate.latitude.toFixed(4)}, {marker.coordinate.longitude.toFixed(4)}
+                    GPS: {marker.coordinate.latitude.toFixed(4)}, {marker.coordinate.longitude.toFixed(4)}
                   </Text>
                 </View>
               </View>
@@ -570,13 +577,19 @@ const styles = StyleSheet.create({
     color: '#666',
     marginTop: 2,
   },
+  sensorAddress: {
+    fontSize: 13,
+    color: '#333',
+    marginTop: 3,
+    fontWeight: '500',
+  },
   sensorRestriction: {
     fontSize: 13,
     marginTop: 3,
     fontWeight: '500',
   },
   sensorLocation: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#999',
     marginTop: 2,
   },

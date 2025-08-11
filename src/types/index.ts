@@ -58,11 +58,27 @@ export interface ParkingZoneSignPlatesApiResponse {
   results: ParkingZoneSignPlate[];
 }
 
-// Enhanced marker with restriction info
+// Parking Zones Street Segments API Types
+export interface ParkingZoneStreetSegment {
+  parkingzone: number;
+  onstreet: string;
+  streetfrom: string;
+  streetto: string;
+  segment_id: number;
+}
+
+export interface ParkingZoneStreetSegmentsApiResponse {
+  total_count: number;
+  results: ParkingZoneStreetSegment[];
+}
+
+// Enhanced marker with restriction and street info
 export interface EnhancedParkingSensorMarker extends ParkingSensorMarker {
   restrictions?: ParkingZoneSignPlate[];
   currentRestriction?: string;
   isRestricted?: boolean;
+  streetSegment?: ParkingZoneStreetSegment;
+  streetAddress?: string;
 }
 
 // Error types
