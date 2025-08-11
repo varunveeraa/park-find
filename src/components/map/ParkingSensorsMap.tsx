@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ActivityIndicator, Alert, AppState, Dimensions, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { parkingSensorsApi } from '../../services/api/parkingSensorsApi';
 import { ApiError, EnhancedParkingSensorMarker } from '../../types';
+import { UserLocationDisplay } from '../location/UserLocationDisplay';
 
 interface Region {
   latitude: number;
@@ -58,27 +59,18 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
   // Determine if we should use horizontal layout (web/tablet)
   const isWideScreen = screenData.width >= 768;
 
-  // Request location permissions and get user location
-  const getUserLocation = useCallback(async () => {
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        console.warn('Location permission not granted');
-        return;
-      }
+  // Handle user location updates from UserLocationDisplay component
+  const handleLocationUpdate = useCallback((location: Location.LocationObject | null) => {
+    setUserLocation(location);
 
-      const location = await Location.getCurrentPositionAsync({});
-      setUserLocation(location);
-      
-      // Update region to user's location
+    // Update region to user's location if available
+    if (location) {
       setRegion({
         latitude: location.coords.latitude,
         longitude: location.coords.longitude,
         latitudeDelta: 0.0922,
         longitudeDelta: 0.0421,
       });
-    } catch (error) {
-      console.error('Error getting user location:', error);
     }
   }, []);
 
@@ -128,12 +120,7 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
     return () => subscription?.remove();
   }, []);
 
-  // Initial setup
-  useEffect(() => {
-    if (showUserLocation) {
-      getUserLocation();
-    }
-  }, [getUserLocation, showUserLocation]);
+  // No longer needed - UserLocationDisplay component handles location setup
 
   // Fetch data when region changes
   useEffect(() => {
@@ -362,6 +349,17 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
       !marker.streetAddress.includes('Address not available') // Extra safety check
     );
 
+    // Calculate distances from user location if available
+    if (userLocation) {
+      filteredMarkers = filteredMarkers.map(marker => ({
+        ...marker,
+        distanceFromUser: calculateDistance(
+          { latitude: userLocation.coords.latitude, longitude: userLocation.coords.longitude },
+          { latitude: marker.coordinate.latitude, longitude: marker.coordinate.longitude }
+        )
+      }));
+    }
+
     // Apply search filter
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase().trim();
@@ -482,14 +480,23 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
         filteredMarkers.sort((a, b) => b.lastUpdated.getTime() - a.lastUpdated.getTime());
         break;
       case 'distance':
+        // Sort by distance from user location (closest first)
+        if (userLocation) {
+          filteredMarkers.sort((a, b) => {
+            const distanceA = a.distanceFromUser || Infinity;
+            const distanceB = b.distanceFromUser || Infinity;
+            return distanceA - distanceB;
+          });
+        }
+        break;
       default:
-        // For now, keep original order (could implement distance sorting with user location)
+        // Keep original order
         break;
     }
 
     console.log(`Final filtered results: ${filteredMarkers.length} markers`);
     return filteredMarkers;
-  }, [markers, searchQuery, filterType, signTypeFilter, hoursFilter, sortType]);
+  }, [markers, searchQuery, filterType, signTypeFilter, hoursFilter, sortType, userLocation]);
 
   const generateMapHTML = () => {
     const markersData = markers.map(marker => ({
@@ -720,6 +727,12 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
             </Text>
           </View>
 
+          {/* User Location Display */}
+          <UserLocationDisplay
+            onLocationUpdate={handleLocationUpdate}
+            showRefreshButton={true}
+          />
+
           {/* Search Bar */}
           <View style={styles.searchContainer}>
             <View style={styles.searchInputContainer}>
@@ -845,12 +858,25 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
                 >
                   {/* Main Street Name - Most Prominent */}
                   <View style={styles.streetHeader}>
-                    <Text style={styles.streetName}>
-                      {marker.streetAddress ?
-                        marker.streetAddress.split(' (')[0] : // Extract just the street name
-                        `Zone ${marker.zoneNumber}`
-                      }
-                    </Text>
+                    <View style={styles.streetNameContainer}>
+                      <Text style={styles.streetName}>
+                        {marker.streetAddress ?
+                          marker.streetAddress.split(' (')[0] : // Extract just the street name
+                          `Zone ${marker.zoneNumber}`
+                        }
+                      </Text>
+                      {/* Distance and Walking Time */}
+                      {marker.distanceFromUser !== undefined && (
+                        <View style={styles.distanceContainer}>
+                          <Text style={styles.distanceText}>
+                            📍 {formatDistance(marker.distanceFromUser)}
+                          </Text>
+                          <Text style={styles.walkingTimeText}>
+                            🚶 {formatWalkingTime(calculateWalkingTime(marker.distanceFromUser))}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
                     <View style={styles.headerRight}>
                       <View style={styles.topRightRow}>
                         <View style={[
@@ -1318,13 +1344,31 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     marginBottom: 16,
   },
+  streetNameContainer: {
+    flex: 1,
+    marginRight: 12,
+  },
   streetName: {
     fontSize: 22,
     fontWeight: 'bold',
     color: '#1a1a1a',
-    flex: 1,
-    marginRight: 12,
     lineHeight: 28,
+    marginBottom: 4,
+  },
+  distanceContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  distanceText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#3498db',
+  },
+  walkingTimeText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#7f8c8d',
   },
   headerRight: {
     alignItems: 'flex-end',

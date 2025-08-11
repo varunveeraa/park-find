@@ -79,6 +79,7 @@ export interface EnhancedParkingSensorMarker extends ParkingSensorMarker {
   isRestricted?: boolean;
   streetSegment?: ParkingZoneStreetSegment;
   streetAddress?: string;
+  distanceFromUser?: number; // Distance in kilometers
 }
 
 // Error types
