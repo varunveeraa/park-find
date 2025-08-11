@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ActivityIndicator, Alert, AppState, Dimensions, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { parkingSensorsApi } from '../../services/api/parkingSensorsApi';
 import { ApiError, EnhancedParkingSensorMarker } from '../../types';
+import { calculateDistance, calculateWalkingTime, formatDistance, formatWalkingTime } from '../../utils/distance';
 import { UserLocationDisplay } from '../location/UserLocationDisplay';
 
 interface Region {
