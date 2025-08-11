@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import {
-  Alert,
-  Modal,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    Alert,
+    Modal,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 
 interface FavoriteNameModalProps {
@@ -58,7 +58,7 @@ export const FavoriteNameModal: React.FC<FavoriteNameModalProps> = ({
       <View style={styles.overlay}>
         <View style={styles.modalContainer}>
           <View style={styles.header}>
-            <Text style={styles.title}>💾 Save to Favorites</Text>
+            <Text style={styles.title}>🔖 Save Parking Spot</Text>
             <Text style={styles.subtitle}>Give this parking spot a custom name</Text>
           </View>
 

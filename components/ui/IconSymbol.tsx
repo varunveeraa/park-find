@@ -21,6 +21,8 @@ const MAPPING = {
   'map.fill': 'map',
   'heart.fill': 'favorite',
   'heart': 'favorite-border',
+  'bookmark.fill': 'bookmark',
+  'bookmark': 'bookmark-border',
 } as IconMapping;
 
 /**

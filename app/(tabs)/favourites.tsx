@@ -18,48 +18,48 @@ import {
     View
 } from 'react-native';
 
-export default function FavouritesScreen() {
+export default function SavedScreen() {
   const { colorScheme } = useTheme();
   const colors = Colors[colorScheme as keyof typeof Colors] || Colors.light;
-  const [favourites, setFavourites] = useState<FavoriteSpot[]>([]);
+  const [savedSpots, setSavedSpots] = useState<FavoriteSpot[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const initializeAndLoadFavourites = useCallback(async () => {
+  const initializeAndLoadSaved = useCallback(async () => {
     try {
       setLoading(true);
       // Initialize database first (only for web)
       if (Platform.OS === 'web') {
         await webDatabaseService.initialize();
       }
-      await loadFavourites();
+      await loadSaved();
     } catch (error) {
       console.error('Error initializing database:', error);
       setLoading(false);
     }
   }, []);
 
-  // Reload favorites every time the screen is focused
+  // Reload saved spots every time the screen is focused
   useFocusEffect(
     useCallback(() => {
-      initializeAndLoadFavourites();
-    }, [initializeAndLoadFavourites])
+      initializeAndLoadSaved();
+    }, [initializeAndLoadSaved])
   );
 
-  const loadFavourites = async () => {
+  const loadSaved = async () => {
     try {
       const favorites = await favoritesService.getAllFavorites();
-      setFavourites(favorites);
+      setSavedSpots(favorites);
     } catch (error) {
-      console.error('Error loading favourites:', error);
+      console.error('Error loading saved spots:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  const removeFavourite = async (id: string) => {
+  const removeSaved = async (id: string) => {
     Alert.alert(
-      'Remove Favourite',
-      'Are you sure you want to remove this parking spot from your favourites?',
+      'Remove Saved Spot',
+      'Are you sure you want to remove this parking spot from your saved spots?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -68,10 +68,10 @@ export default function FavouritesScreen() {
           onPress: async () => {
             try {
               await favoritesService.removeFavorite(id);
-              const updatedFavourites = favourites.filter(fav => fav.id !== id);
-              setFavourites(updatedFavourites);
+              const updatedSaved = savedSpots.filter(spot => spot.id !== id);
+              setSavedSpots(updatedSaved);
             } catch (error) {
-              console.error('Error removing favourite:', error);
+              console.error('Error removing saved spot:', error);
             }
           },
         },
@@ -79,10 +79,10 @@ export default function FavouritesScreen() {
     );
   };
 
-  const clearAllFavourites = async () => {
+  const clearAllSaved = async () => {
     Alert.alert(
-      'Clear All Favourites',
-      'Are you sure you want to remove all favourite parking spots?',
+      'Clear All Saved Spots',
+      'Are you sure you want to remove all saved parking spots?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -91,9 +91,9 @@ export default function FavouritesScreen() {
           onPress: async () => {
             try {
               await favoritesService.clearAllFavorites();
-              setFavourites([]);
+              setSavedSpots([]);
             } catch (error) {
-              console.error('Error clearing favourites:', error);
+              console.error('Error clearing saved spots:', error);
             }
           },
         },
@@ -125,7 +125,7 @@ export default function FavouritesScreen() {
 
   const styles = createStyles(colors);
 
-  const renderFavouriteItem = (item: FavoriteSpot) => (
+  const renderSavedItem = (item: FavoriteSpot) => (
     <View key={item.id} style={styles.favouriteCard}>
       {/* Status Bar */}
       <View style={[
@@ -197,10 +197,10 @@ export default function FavouritesScreen() {
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.removeButton}
-            onPress={() => removeFavourite(item.id)}
+            onPress={() => removeSaved(item.id)}
             activeOpacity={0.8}
           >
-            <Text style={styles.removeIcon}>❤️</Text>
+            <Text style={styles.removeIcon}>🔖</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -218,7 +218,7 @@ export default function FavouritesScreen() {
           backgroundColor={colors.background}
         />
         <View style={styles.loadingContainer}>
-          <Text style={styles.loadingText}>Loading favourites...</Text>
+          <Text style={styles.loadingText}>Loading saved spots...</Text>
         </View>
       </SafeAreaView>
     );
@@ -233,38 +233,38 @@ export default function FavouritesScreen() {
       
       <View style={styles.header}>
         <View style={styles.titleContainer}>
-          <Text style={styles.title}>❤️ Favourite Parking</Text>
+          <Text style={styles.title}>🔖 Saved Parking</Text>
           <Text style={styles.subtitle}>Your saved parking spots</Text>
         </View>
         
-        {favourites.length > 0 && (
+        {savedSpots.length > 0 && (
           <TouchableOpacity
             style={styles.clearAllButton}
-            onPress={clearAllFavourites}
+            onPress={clearAllSaved}
           >
             <Text style={styles.clearAllText}>Clear All</Text>
           </TouchableOpacity>
         )}
       </View>
 
-      {favourites.length === 0 ? (
+      {savedSpots.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <IconSymbol name="heart" size={80} color={colors.textSecondary} />
-          <Text style={styles.emptyTitle}>No Favourite Spots Yet</Text>
+          <IconSymbol name="bookmark" size={80} color={colors.textSecondary} />
+          <Text style={styles.emptyTitle}>No Saved Spots Yet</Text>
           <Text style={styles.emptySubtitle}>
-            Start adding parking spots to your favourites from the Parking Map screen.
+            Start adding parking spots to your saved spots from the Parking Map screen.
           </Text>
           <Text style={styles.emptyHint}>
-            💡 Tip: Tap the heart icon on any parking spot to save it here!
+            💡 Tip: Tap the bookmark icon on any parking spot to save it here!
           </Text>
         </View>
       ) : (
         <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
           <View style={styles.favouritesList}>
             <Text style={styles.countText}>
-              {favourites.length} favourite spot{favourites.length !== 1 ? 's' : ''}
+              {savedSpots.length} saved spot{savedSpots.length !== 1 ? 's' : ''}
             </Text>
-            {favourites.map(renderFavouriteItem)}
+            {savedSpots.map(renderSavedItem)}
           </View>
         </ScrollView>
       )}

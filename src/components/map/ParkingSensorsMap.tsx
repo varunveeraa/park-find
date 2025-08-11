@@ -71,7 +71,7 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
   const [showSignTypeDropdown, setShowSignTypeDropdown] = useState(false);
   const [showHoursDropdown, setShowHoursDropdown] = useState(false);
   const [showSortDropdown, setShowSortDropdown] = useState(false);
-  const [favouriteIds, setFavouriteIds] = useState<Set<string>>(new Set());
+  const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
   const [showNameModal, setShowNameModal] = useState(false);
   const [pendingFavorite, setPendingFavorite] = useState<EnhancedParkingSensorMarker | null>(null);
   const [isListening, setIsListening] = useState(false);
@@ -346,38 +346,38 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
     }
   };
 
-  // Load favourites from SQLite database
-  const loadFavourites = useCallback(async () => {
+  // Load saved spots from database
+  const loadSaved = useCallback(async () => {
     try {
       const favoriteIds = await favoritesService.getFavoriteIds();
-      setFavouriteIds(favoriteIds);
+      setSavedIds(favoriteIds);
     } catch (error) {
-      console.error('Error loading favourites:', error);
+      console.error('Error loading saved spots:', error);
     }
   }, []);
 
-  // Add/remove favourite
-  const toggleFavourite = useCallback(async (marker: EnhancedParkingSensorMarker) => {
+  // Add/remove saved spot
+  const toggleSaved = useCallback(async (marker: EnhancedParkingSensorMarker) => {
     try {
       const isFavorite = await favoritesService.isFavorite(marker.id);
 
       if (isFavorite) {
-        // Remove from favourites
+        // Remove from saved spots
         await favoritesService.removeFavorite(marker.id);
-        setFavouriteIds(prev => {
+        setSavedIds(prev => {
           const newSet = new Set(prev);
           newSet.delete(marker.id);
           return newSet;
         });
-        Alert.alert('Removed', 'Parking spot removed from favourites');
+        Alert.alert('Removed', 'Parking spot removed from saved spots');
       } else {
         // Show modal to get custom name
         setPendingFavorite(marker);
         setShowNameModal(true);
       }
     } catch (error) {
-      console.error('Error toggling favourite:', error);
-      Alert.alert('Error', 'Failed to update favourites');
+      console.error('Error toggling saved spot:', error);
+      Alert.alert('Error', 'Failed to update saved spots');
     }
   }, []);
 
@@ -392,15 +392,15 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
       }
 
       await favoritesService.addFavorite(favoriteInput);
-      setFavouriteIds(prev => new Set(prev).add(pendingFavorite.id));
+      setSavedIds(prev => new Set(prev).add(pendingFavorite.id));
 
       const displayName = customName.trim() || pendingFavorite.streetAddress || 'Parking spot';
-      Alert.alert('Added', `"${displayName}" added to favourites`);
+      Alert.alert('Saved', `"${displayName}" added to saved spots`);
 
       setPendingFavorite(null);
     } catch (error) {
-      console.error('Error adding favourite:', error);
-      Alert.alert('Error', 'Failed to add to favourites');
+      console.error('Error saving spot:', error);
+      Alert.alert('Error', 'Failed to save spot');
     }
   }, [pendingFavorite]);
 
@@ -496,10 +496,10 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
     }
   }, [speechSupported, isListening]);
 
-  // Load favourites on component mount
+  // Load saved spots on component mount
   useEffect(() => {
-    loadFavourites();
-  }, [loadFavourites]);
+    loadSaved();
+  }, [loadSaved]);
 
   // Close all dropdowns
   const closeAllDropdowns = () => {
@@ -1452,14 +1452,14 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
                           </Text>
                         </View>
                         <TouchableOpacity
-                          style={styles.heartButton}
-                          onPress={() => toggleFavourite(marker)}
+                          style={styles.bookmarkButton}
+                          onPress={() => toggleSaved(marker)}
                         >
                           <Text style={[
-                            styles.heartIcon,
-                            favouriteIds.has(marker.id) ? styles.heartFilled : styles.heartEmpty
+                            styles.bookmarkIcon,
+                            savedIds.has(marker.id) ? styles.bookmarkFilled : styles.bookmarkEmpty
                           ]}>
-                            {favouriteIds.has(marker.id) ? '❤️' : '🤍'}
+                            {savedIds.has(marker.id) ? '🔖' : '🏷️'}
                           </Text>
                         </TouchableOpacity>
                       </View>
@@ -2222,17 +2222,17 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
-  heartButton: {
+  bookmarkButton: {
     padding: 4,
   },
-  heartIcon: {
+  bookmarkIcon: {
     fontSize: 20,
   },
-  heartFilled: {
-    // Red heart emoji already colored
+  bookmarkFilled: {
+    // Bookmark emoji already colored
   },
-  heartEmpty: {
-    // White heart emoji already colored
+  bookmarkEmpty: {
+    // Empty bookmark emoji already colored
   },
   statusBadge: {
     paddingHorizontal: 8,
