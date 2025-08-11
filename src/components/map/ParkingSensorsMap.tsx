@@ -1,6 +1,6 @@
 import * as Location from 'expo-location';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, AppState, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, AppState, Dimensions, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { parkingSensorsApi } from '../../services/api/parkingSensorsApi';
 import { ApiError, EnhancedParkingSensorMarker } from '../../types';
 
@@ -39,6 +39,22 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const appState = useRef(AppState.currentState);
+  const [screenData, setScreenData] = useState(Dimensions.get('window'));
+  const [mapHtml, setMapHtml] = useState<string>('');
+  const [filterType, setFilterType] = useState<'all' | 'unrestricted' | 'restricted'>('all');
+  const [signTypeFilter, setSignTypeFilter] = useState<'all' | '2P' | 'MP1P' | '4P' | '1P' | 'other'>('all');
+  const [hoursFilter, setHoursFilter] = useState<'all' | 'morning' | 'business' | 'evening' | 'weekend'>('all');
+
+  const [sortType, setSortType] = useState<'availability' | 'name' | 'recent' | 'distance'>('availability');
+  const [selectedMarker, setSelectedMarker] = useState<EnhancedParkingSensorMarker | null>(null);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [showTypeDropdown, setShowTypeDropdown] = useState(false);
+  const [showSignTypeDropdown, setShowSignTypeDropdown] = useState(false);
+  const [showHoursDropdown, setShowHoursDropdown] = useState(false);
+  const [showSortDropdown, setShowSortDropdown] = useState(false);
+
+  // Determine if we should use horizontal layout (web/tablet)
+  const isWideScreen = screenData.width >= 768;
 
   // Request location permissions and get user location
   const getUserLocation = useCallback(async () => {
@@ -100,6 +116,15 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
       setLoading(false);
     }
   }, [region]);
+
+  // Listen for screen dimension changes
+  useEffect(() => {
+    const subscription = Dimensions.addEventListener('change', ({ window }) => {
+      setScreenData(window);
+    });
+
+    return () => subscription?.remove();
+  }, []);
 
   // Initial setup
   useEffect(() => {
@@ -164,8 +189,251 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
     fetchParkingData();
   };
 
+  // Handle parking spot selection/deselection
+  const handleParkingSpotSelect = (marker: EnhancedParkingSensorMarker) => {
+    // If clicking the same marker, deselect it
+    if (selectedMarker?.id === marker.id) {
+      setSelectedMarker(null);
+    } else {
+      setSelectedMarker(marker);
+    }
+  };
+
+  // Close all dropdowns
+  const closeAllDropdowns = () => {
+    setShowTypeDropdown(false);
+    setShowSignTypeDropdown(false);
+    setShowHoursDropdown(false);
+    setShowSortDropdown(false);
+  };
+
+  // Dropdown component
+  const Dropdown = ({
+    label,
+    value,
+    options,
+    onSelect,
+    isOpen,
+    onToggle
+  }: {
+    label: string;
+    value: string;
+    options: { key: string; label: string }[];
+    onSelect: (key: string) => void;
+    isOpen: boolean;
+    onToggle: () => void;
+  }) => (
+    <View style={[styles.dropdownContainer, isOpen && { zIndex: 1000 }]}>
+      <TouchableOpacity
+        style={styles.dropdownButton}
+        onPress={() => {
+          closeAllDropdowns();
+          onToggle();
+        }}
+      >
+        <View>
+          <Text style={styles.dropdownLabel}>{label}</Text>
+          <View style={styles.dropdownValue}>
+            <Text style={styles.dropdownValueText}>
+              {options.find(opt => opt.key === value)?.label || value}
+            </Text>
+            <Text style={styles.dropdownArrow}>{isOpen ? '▲' : '▼'}</Text>
+          </View>
+        </View>
+      </TouchableOpacity>
+
+      {isOpen && (
+        <View style={styles.dropdownMenu}>
+          {options.map((option, index) => (
+            <TouchableOpacity
+              key={option.key}
+              style={[
+                styles.dropdownOption,
+                value === option.key && styles.dropdownOptionSelected,
+                index === options.length - 1 && { borderBottomWidth: 0 }
+              ]}
+              onPress={() => {
+                onSelect(option.key);
+                onToggle();
+              }}
+            >
+              <Text style={[
+                styles.dropdownOptionText,
+                value === option.key && styles.dropdownOptionTextSelected
+              ]}>
+                {option.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+
+  // Parse parking restriction details
+  const parseRestrictionDetails = (marker: EnhancedParkingSensorMarker) => {
+    if (!marker.restrictions || marker.restrictions.length === 0) {
+      return {
+        signType: null,
+        timeRange: null,
+        days: null,
+        isCurrentlyActive: false
+      };
+    }
+
+    // Get the first restriction (could be enhanced to handle multiple)
+    const restriction = marker.restrictions[0];
+
+    return {
+      signType: restriction.restriction_display, // e.g., "2P", "MP1P"
+      timeRange: `${restriction.time_restrictions_start} - ${restriction.time_restrictions_finish}`,
+      days: restriction.restriction_days,
+      isCurrentlyActive: marker.isRestricted || false
+    };
+  };
+
+
+
+  // Filter and sort markers with memoization
+  const filteredAndSortedMarkers = useMemo(() => {
+    let filteredMarkers = markers.filter(marker =>
+      marker.streetAddress && // Must have address
+      marker.streetAddress !== 'Address not available' && // Exclude "Address not available"
+      !marker.streetAddress.includes('Address not available') // Extra safety check
+    );
+
+    // Apply search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
+      const beforeSearchCount = filteredMarkers.length;
+      filteredMarkers = filteredMarkers.filter(marker => {
+        const streetName = (marker.streetAddress || '').toLowerCase();
+        const zoneNumber = (marker.title || '').toLowerCase();
+        const description = (marker.description || '').toLowerCase();
+
+        // Simple search - check if query is contained in any of these fields
+        const matches = streetName.includes(query) ||
+                       zoneNumber.includes(query) ||
+                       description.includes(query);
+
+        if (matches) {
+          console.log(`Match found: ${marker.title} - ${marker.streetAddress}`);
+        }
+
+        return matches;
+      });
+      console.log(`Search for "${query}": ${beforeSearchCount} -> ${filteredMarkers.length} results`);
+    }
+
+    // Apply basic restriction filter
+    switch (filterType) {
+      case 'unrestricted':
+        filteredMarkers = filteredMarkers.filter(marker => !marker.isRestricted);
+        break;
+      case 'restricted':
+        filteredMarkers = filteredMarkers.filter(marker => marker.isRestricted);
+        break;
+      case 'all':
+      default:
+        // No additional filtering
+        break;
+    }
+
+    // Apply sign type filter
+    if (signTypeFilter !== 'all') {
+      filteredMarkers = filteredMarkers.filter(marker => {
+        const restrictionDetails = parseRestrictionDetails(marker);
+        if (!restrictionDetails.signType) return signTypeFilter === 'other';
+
+        switch (signTypeFilter) {
+          case '2P':
+            return restrictionDetails.signType.includes('2P');
+          case 'MP1P':
+            return restrictionDetails.signType.includes('MP1P');
+          case '4P':
+            return restrictionDetails.signType.includes('4P');
+          case '1P':
+            return restrictionDetails.signType.includes('1P') && !restrictionDetails.signType.includes('MP1P');
+          case 'other':
+            return !['2P', 'MP1P', '4P', '1P'].some(type => restrictionDetails.signType.includes(type));
+          default:
+            return true;
+        }
+      });
+    }
+
+    // Apply hours filter
+    if (hoursFilter !== 'all') {
+      filteredMarkers = filteredMarkers.filter(marker => {
+        const restrictionDetails = parseRestrictionDetails(marker);
+        if (!restrictionDetails.timeRange) return false;
+
+        const startTime = restrictionDetails.timeRange.split(' - ')[0];
+        const endTime = restrictionDetails.timeRange.split(' - ')[1];
+
+        switch (hoursFilter) {
+          case 'morning':
+            // Restrictions that start before 10 AM
+            return startTime && startTime <= '10:00:00';
+          case 'business':
+            // Restrictions during business hours (8 AM - 6 PM)
+            return startTime && endTime && startTime >= '08:00:00' && endTime <= '18:00:00';
+          case 'evening':
+            // Restrictions that end after 6 PM
+            return endTime && endTime >= '18:00:00';
+          case 'weekend':
+            // Weekend restrictions
+            return restrictionDetails.days && (
+              restrictionDetails.days.includes('Sat') ||
+              restrictionDetails.days.includes('Sun') ||
+              restrictionDetails.days.includes('Sat-Sun')
+            );
+          default:
+            return true;
+        }
+      });
+    }
+
+
+
+    // Apply sort
+    switch (sortType) {
+      case 'availability':
+        // Sort by availability first (available spots first), then by name
+        filteredMarkers.sort((a, b) => {
+          // Available spots (not occupied) come first
+          if (a.isOccupied !== b.isOccupied) {
+            return a.isOccupied ? 1 : -1;
+          }
+          // If same availability, sort by name
+          const aName = a.streetAddress?.split(' (')[0] || `Zone ${a.zoneNumber}`;
+          const bName = b.streetAddress?.split(' (')[0] || `Zone ${b.zoneNumber}`;
+          return aName.localeCompare(bName);
+        });
+        break;
+      case 'name':
+        filteredMarkers.sort((a, b) => {
+          const aName = a.streetAddress?.split(' (')[0] || `Zone ${a.zoneNumber}`;
+          const bName = b.streetAddress?.split(' (')[0] || `Zone ${b.zoneNumber}`;
+          return aName.localeCompare(bName);
+        });
+        break;
+      case 'recent':
+        filteredMarkers.sort((a, b) => b.lastUpdated.getTime() - a.lastUpdated.getTime());
+        break;
+      case 'distance':
+      default:
+        // For now, keep original order (could implement distance sorting with user location)
+        break;
+    }
+
+    console.log(`Final filtered results: ${filteredMarkers.length} markers`);
+    return filteredMarkers;
+  }, [markers, searchQuery, filterType, signTypeFilter, hoursFilter, sortType]);
+
   const generateMapHTML = () => {
     const markersData = markers.map(marker => ({
+      id: marker.id,
       lat: marker.coordinate.latitude,
       lng: marker.coordinate.longitude,
       title: marker.title,
@@ -173,7 +441,8 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
       color: marker.isOccupied ? '#FF6B6B' : '#4ECDC4',
       restriction: marker.currentRestriction || 'No restriction data',
       isRestricted: marker.isRestricted || false,
-      streetAddress: marker.streetAddress || 'Address not available'
+      streetAddress: marker.streetAddress || 'Address not available',
+      isSelected: selectedMarker?.id === marker.id
     }));
 
     return `
@@ -185,6 +454,38 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
         <style>
           body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
           #map { height: 100vh; width: 100%; }
+
+          /* Custom popup styling */
+          .custom-popup .leaflet-popup-content-wrapper {
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+            border: none;
+            padding: 0;
+          }
+
+          .custom-popup .leaflet-popup-content {
+            margin: 0;
+            padding: 10px;
+          }
+
+          .custom-popup .leaflet-popup-tip {
+            background: white;
+            border: none;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+          }
+
+          .leaflet-popup-close-button {
+            color: #95a5a6 !important;
+            font-size: 18px !important;
+            font-weight: bold !important;
+            padding: 8px !important;
+          }
+
+          .leaflet-popup-close-button:hover {
+            color: #e74c3c !important;
+            background: rgba(231, 76, 60, 0.1) !important;
+            border-radius: 50%;
+          }
           .info-panel {
             position: absolute;
             top: 10px;
@@ -246,25 +547,40 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
             const markers = ${JSON.stringify(markersData)};
 
             // Add markers to map
+            const markerObjects = {};
             markers.forEach(markerData => {
               const marker = L.circleMarker([markerData.lat, markerData.lng], {
-                radius: 8,
-                fillColor: markerData.color,
+                radius: markerData.isSelected ? 12 : 8,
+                fillColor: markerData.isSelected ? '#e74c3c' : markerData.color,
                 color: '#fff',
-                weight: 2,
+                weight: markerData.isSelected ? 3 : 2,
                 opacity: 1,
-                fillOpacity: 0.8
+                fillOpacity: markerData.isSelected ? 1 : 0.8
               }).addTo(map);
 
-              // Add popup with street address and restriction info
-              const popupContent = '<div>' +
-                '<h4>' + markerData.title + '</h4>' +
-                '<p><strong>Location:</strong> ' + markerData.streetAddress + '</p>' +
-                '<p>' + markerData.description + '</p>' +
-                '<p><strong>Restriction:</strong> ' + markerData.restriction + '</p>' +
-                (markerData.isRestricted ? '<p style="color: #FF8C00;">⚠️ Currently restricted</p>' : '<p style="color: #4ECDC4;">✅ No active restrictions</p>') +
+              // Store marker reference
+              markerObjects[markerData.id] = marker;
+
+              // Simple popup for now to get map working
+              const popupContent = '<div style="min-width: 250px; font-family: Arial, sans-serif;">' +
+                '<h4 style="margin: 0 0 10px 0; color: #2c3e50;">🅿️ ' + markerData.title + '</h4>' +
+                '<p style="margin: 5px 0;"><strong>📍 Location:</strong><br>' + markerData.streetAddress + '</p>' +
+                '<p style="margin: 5px 0;"><strong>🅿️ Restriction:</strong><br>' + markerData.restriction + '</p>' +
+                '<p style="margin: 5px 0;"><strong>📊 Status:</strong><br>' +
+                (markerData.isRestricted ? '<span style="color: #e74c3c;">⏰ Time Limited</span>' : '<span style="color: #27ae60;">✅ No Active Restrictions</span>') +
+                '</p>' +
+                '<p style="margin: 5px 0; font-size: 12px; color: #7f8c8d;">Last updated: ' + new Date().toLocaleTimeString() + '</p>' +
                 '</div>';
-              marker.bindPopup(popupContent);
+              marker.bindPopup(popupContent, {
+                maxWidth: 350,
+                className: 'custom-popup'
+              });
+
+              // Auto-open popup if this marker is selected
+              if (markerData.isSelected) {
+                marker.openPopup();
+                map.setView([markerData.lat, markerData.lng], Math.max(map.getZoom(), 16));
+              }
             });
 
             // Add legend
@@ -290,14 +606,12 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
     `;
   };
 
-  const [mapHtml, setMapHtml] = useState<string>('');
-
-  // Generate map HTML when markers change
+  // Generate map HTML when markers or selected marker changes
   useEffect(() => {
     if (markers.length > 0) {
       setMapHtml(generateMapHTML());
     }
-  }, [markers]);
+  }, [markers, selectedMarker]);
 
   if (loading && markers.length === 0) {
     return (
@@ -309,87 +623,247 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
   }
 
   return (
-    <View style={styles.container}>
-      {/* Top Half - Sensor List */}
-      <View style={styles.topHalf}>
+    <View style={[styles.container, isWideScreen ? styles.containerHorizontal : styles.containerVertical]}>
+      {/* List Section */}
+      <View style={[styles.listSection, isWideScreen ? styles.leftHalf : styles.topHalf]}>
         <View style={styles.header}>
-          <Text style={styles.title}>Melbourne Parking Sensors</Text>
+          <View style={styles.titleContainer}>
+            <Text style={styles.title}>🅿️ Park Find</Text>
+            <Text style={styles.subtitle}>Find available parking spots in Melbourne</Text>
+          </View>
           <TouchableOpacity style={styles.refreshButton} onPress={handleManualRefresh}>
-            <Text style={styles.refreshButtonText}>🔄 Refresh</Text>
+            <Text style={styles.refreshButtonText}>🔄</Text>
           </TouchableOpacity>
         </View>
 
-        <View style={styles.statsContainer}>
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{markers.length}</Text>
-            <Text style={styles.statLabel}>Total</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Text style={[styles.statNumber, { color: '#4ECDC4' }]}>
-              {markers.filter(m => !m.isOccupied).length}
-            </Text>
-            <Text style={styles.statLabel}>Available</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Text style={[styles.statNumber, { color: '#FF6B6B' }]}>
-              {markers.filter(m => m.isOccupied).length}
-            </Text>
-            <Text style={styles.statLabel}>Occupied</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Text style={[styles.statNumber, { color: '#FF8C00' }]}>
-              {markers.filter(m => m.isRestricted).length}
-            </Text>
-            <Text style={styles.statLabel}>Restricted</Text>
-          </View>
-        </View>
+
 
         <View style={styles.sensorListContainer}>
           <View style={styles.listHeader}>
-            <Text style={styles.sensorListTitle}>Parking Sensors ({markers.length})</Text>
+            <View style={styles.listTitleContainer}>
+              <Text style={styles.sensorListTitle}>
+                🅿️ {searchQuery.trim() ? 'Search Results' : 'Parking Spots'}
+              </Text>
+              <View style={styles.countBadge}>
+                <Text style={styles.countBadgeText}>
+                  {filteredAndSortedMarkers.filter(m => !m.isOccupied).length} available / {filteredAndSortedMarkers.length} total
+                </Text>
+              </View>
+            </View>
+            {searchQuery.trim() && (
+              <Text style={styles.searchResultsText}>
+                Showing results for &quot;{searchQuery}&quot;
+              </Text>
+            )}
             <Text style={styles.lastUpdateText}>
               Updated: {lastRefresh.toLocaleTimeString()}
             </Text>
           </View>
-          <ScrollView style={styles.sensorList} showsVerticalScrollIndicator={false}>
-            {markers.map((marker, index) => (
-              <View key={marker.id} style={[
-                styles.sensorItem,
-                { borderLeftColor: marker.isOccupied ? '#FF6B6B' : '#4ECDC4' }
-              ]}>
-                <View style={[styles.statusDot, { backgroundColor: marker.isOccupied ? '#FF6B6B' : '#4ECDC4' }]} />
-                <View style={styles.sensorInfo}>
-                  <Text style={styles.sensorTitle}>{marker.title}</Text>
-                  <Text style={styles.sensorStatus}>
-                    {marker.isOccupied ? '🔴 Occupied' : '🟢 Available'}
-                  </Text>
-                  {marker.streetAddress && (
-                    <Text style={styles.sensorAddress}>
-                      📍 {marker.streetAddress}
+
+          {/* Search Bar */}
+          <View style={styles.searchContainer}>
+            <View style={styles.searchInputContainer}>
+              <Text style={styles.searchIcon}>🔍</Text>
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search by street name, zone, or location..."
+                placeholderTextColor="#95a5a6"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                autoCapitalize="words"
+                autoCorrect={false}
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity
+                  style={styles.clearSearchButton}
+                  onPress={() => setSearchQuery('')}
+                >
+                  <Text style={styles.clearSearchText}>✕</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+
+          {/* Filters and Sort Container */}
+          <View style={styles.filtersContainer}>
+            {/* Dropdowns Row */}
+            <View style={styles.dropdownsRow}>
+              <Dropdown
+                label="Type"
+                value={filterType}
+                options={[
+                  { key: 'all', label: 'All' },
+                  { key: 'unrestricted', label: 'No Limits' },
+                  { key: 'restricted', label: 'Time Limited' }
+                ]}
+                onSelect={(key) => setFilterType(key as any)}
+                isOpen={showTypeDropdown}
+                onToggle={() => setShowTypeDropdown(!showTypeDropdown)}
+              />
+
+              <Dropdown
+                label="Duration"
+                value={signTypeFilter}
+                options={[
+                  { key: 'all', label: 'All' },
+                  { key: '1P', label: '1 Hour' },
+                  { key: '2P', label: '2 Hours' },
+                  { key: '4P', label: '4 Hours' },
+                  { key: 'MP1P', label: 'Meter 1H' }
+                ]}
+                onSelect={(key) => setSignTypeFilter(key as any)}
+                isOpen={showSignTypeDropdown}
+                onToggle={() => setShowSignTypeDropdown(!showSignTypeDropdown)}
+              />
+
+              <Dropdown
+                label="Hours"
+                value={hoursFilter}
+                options={[
+                  { key: 'all', label: 'All' },
+                  { key: 'morning', label: 'Morning' },
+                  { key: 'business', label: 'Business' },
+                  { key: 'evening', label: 'Evening' }
+                ]}
+                onSelect={(key) => setHoursFilter(key as any)}
+                isOpen={showHoursDropdown}
+                onToggle={() => setShowHoursDropdown(!showHoursDropdown)}
+              />
+
+              <Dropdown
+                label="Sort"
+                value={sortType}
+                options={[
+                  { key: 'availability', label: 'Available First' },
+                  { key: 'name', label: 'By Name' },
+                  { key: 'recent', label: 'Recently Updated' },
+                  { key: 'distance', label: 'By Distance' }
+                ]}
+                onSelect={(key) => setSortType(key as any)}
+                isOpen={showSortDropdown}
+                onToggle={() => setShowSortDropdown(!showSortDropdown)}
+              />
+            </View>
+
+            {/* Clear Filters Button */}
+            {(filterType !== 'all' || signTypeFilter !== 'all' || hoursFilter !== 'all' || searchQuery.trim()) && (
+              <TouchableOpacity
+                style={styles.clearAllButton}
+                onPress={() => {
+                  setFilterType('all');
+                  setSignTypeFilter('all');
+                  setHoursFilter('all');
+                  setSortType('availability');
+                  setSearchQuery('');
+                  closeAllDropdowns();
+                }}
+              >
+                <Text style={styles.clearAllButtonText}>🗑️ Clear All Filters</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          <ScrollView
+            style={styles.sensorList}
+            showsVerticalScrollIndicator={false}
+            onScrollBeginDrag={closeAllDropdowns}
+          >
+            {(() => {
+              console.log(`Rendering ${filteredAndSortedMarkers.length} markers in list`);
+              return filteredAndSortedMarkers;
+            })().map((marker, index) => {
+              const restrictionDetails = parseRestrictionDetails(marker);
+
+              return (
+                <TouchableOpacity
+                  key={marker.id}
+                  style={[
+                    styles.parkingSpot,
+                    selectedMarker?.id === marker.id && styles.parkingSpotSelected
+                  ]}
+                  activeOpacity={0.8}
+                  onPress={() => handleParkingSpotSelect(marker)}
+                >
+                  {/* Main Street Name - Most Prominent */}
+                  <View style={styles.streetHeader}>
+                    <Text style={styles.streetName}>
+                      {marker.streetAddress ?
+                        marker.streetAddress.split(' (')[0] : // Extract just the street name
+                        `Zone ${marker.zoneNumber}`
+                      }
+                    </Text>
+                    <View style={styles.headerRight}>
+                      <View style={[
+                        styles.statusBadge,
+                        marker.isOccupied ? styles.occupiedBadge : styles.availableBadge
+                      ]}>
+                        <Text style={styles.statusLabel}>
+                          {marker.isOccupied ? 'OCCUPIED' : 'AVAILABLE'}
+                        </Text>
+                      </View>
+                      <Text style={styles.clickHint}>
+                        {selectedMarker?.id === marker.id ? '👆 Tap to deselect' : '👆 Tap to view on map'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Sign Type and Time Information */}
+                  <View style={styles.restrictionSection}>
+                    {restrictionDetails.signType ? (
+                      <View style={styles.signInfoContainer}>
+                        {/* Sign Type Badge */}
+                        <View style={styles.signTypeBadge}>
+                          <Text style={styles.signTypeText}>{restrictionDetails.signType}</Text>
+                        </View>
+
+                        {/* Time Range */}
+                        <View style={styles.timeInfoContainer}>
+                          <Text style={styles.timeLabel}>Hours:</Text>
+                          <Text style={styles.timeRange}>{restrictionDetails.timeRange}</Text>
+                        </View>
+
+                        {/* Days */}
+                        {restrictionDetails.days && (
+                          <View style={styles.daysContainer}>
+                            <Text style={styles.daysLabel}>Days:</Text>
+                            <Text style={styles.daysText}>{restrictionDetails.days}</Text>
+                          </View>
+                        )}
+                      </View>
+                    ) : (
+                      <Text style={styles.noRestrictionText}>ℹ️ CHECK LOCAL SIGNS FOR DETAILS</Text>
+                    )}
+                  </View>
+
+                  {/* Additional Details - Subtle */}
+                  {marker.streetAddress && marker.streetAddress.includes('(') && (
+                    <Text style={styles.streetDetails}>
+                      {marker.streetAddress.split('(')[1]?.replace(')', '')}
                     </Text>
                   )}
-                  {marker.currentRestriction && (
-                    <Text style={[
-                      styles.sensorRestriction,
-                      { color: marker.isRestricted ? '#FF8C00' : '#666' }
-                    ]}>
-                      🅿️ {marker.currentRestriction}
-                    </Text>
-                  )}
-                  <Text style={styles.sensorLocation}>
-                    GPS: {marker.coordinate.latitude.toFixed(4)}, {marker.coordinate.longitude.toFixed(4)}
-                  </Text>
-                </View>
+                </TouchableOpacity>
+              );
+            })}
+
+            {filteredAndSortedMarkers.length === 0 && (
+              <View style={styles.noAvailableSpots}>
+                <Text style={styles.noAvailableSpotsText}>
+                  🔍 No spots match your filters
+                </Text>
+                <Text style={styles.noAvailableSpotsSubtext}>
+                  Try adjusting your filter options
+                </Text>
               </View>
-            ))}
+            )}
           </ScrollView>
         </View>
       </View>
 
-      {/* Bottom Half - Interactive Map */}
-      <View style={styles.bottomHalf}>
+      {/* Map Section */}
+      <View style={[styles.mapSection, isWideScreen ? styles.rightHalf : styles.bottomHalf]}>
         <View style={styles.mapHeader}>
-          <Text style={styles.mapTitle}>Interactive Map</Text>
+          <Text style={styles.mapTitle}>
+            {isWideScreen ? '🗺️ Interactive Map' : 'Interactive Map'}
+          </Text>
         </View>
         {Platform.OS === 'web' && mapHtml ? (
           <iframe
@@ -408,7 +882,10 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
               📱 Interactive map is available on web platform
             </Text>
             <Text style={styles.mapPlaceholderSubtext}>
-              View the sensor list above for real-time parking data
+              {isWideScreen
+                ? 'View the parking list on the left for real-time data'
+                : 'View the sensor list above for real-time parking data'
+              }
             </Text>
           </View>
         )}
@@ -448,15 +925,35 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f5f5f5',
   },
+  containerVertical: {
+    flexDirection: 'column',
+  },
+  containerHorizontal: {
+    flexDirection: 'row',
+  },
+  listSection: {
+    backgroundColor: '#fff',
+    position: 'relative',
+    zIndex: 10,
+  },
   topHalf: {
     flex: 1,
-    backgroundColor: '#fff',
+  },
+  leftHalf: {
+    flex: 0.3, // 30% of screen width
+    borderRightWidth: 2,
+    borderRightColor: '#e0e0e0',
+  },
+  mapSection: {
+    backgroundColor: '#f8f9fa',
+    padding: 16,
   },
   bottomHalf: {
     flex: 1,
-    backgroundColor: '#fff',
     marginTop: 2,
-    padding: 10,
+  },
+  rightHalf: {
+    flex: 0.7, // 70% of screen width
   },
   header: {
     flexDirection: 'row',
@@ -466,132 +963,427 @@ const styles = StyleSheet.create({
     padding: 20,
     borderBottomWidth: 1,
     borderBottomColor: '#e0e0e0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  titleContainer: {
+    flex: 1,
   },
   title: {
-    fontSize: 24,
+    fontSize: 26,
     fontWeight: 'bold',
-    color: '#333',
+    color: '#2c3e50',
+    marginBottom: 2,
+  },
+  subtitle: {
+    fontSize: 14,
+    color: '#7f8c8d',
+    fontWeight: '500',
   },
   mapHeader: {
-    paddingBottom: 10,
+    paddingBottom: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#e0e0e0',
-    marginBottom: 10,
+    marginBottom: 12,
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    padding: 12,
   },
   mapTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#333',
+    color: '#2c3e50',
     textAlign: 'center',
   },
-  statsContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#fff',
-    paddingVertical: 15,
-    paddingHorizontal: 10,
-    justifyContent: 'space-around',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-  },
-  statItem: {
-    alignItems: 'center',
-  },
-  statNumber: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 4,
-  },
+
   sensorListContainer: {
     flex: 1,
-    padding: 15,
+    padding: 16,
+    backgroundColor: '#f8f9fa',
+    minHeight: 0, // Important for ScrollView in flex container
+    position: 'relative',
+    zIndex: 1,
   },
   listHeader: {
+    marginBottom: 16,
+  },
+  listTitleContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 15,
+    marginBottom: 4,
+  },
+  countBadge: {
+    backgroundColor: '#27ae60',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    marginLeft: 8,
+  },
+  countBadgeText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: 'bold',
   },
   sensorList: {
     flex: 1,
   },
+  searchContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#f8f9fa',
+  },
+  searchInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+  },
+  searchIcon: {
+    fontSize: 16,
+    marginRight: 12,
+    color: '#6c757d',
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    color: '#2c3e50',
+    paddingVertical: 0,
+  },
+  clearSearchButton: {
+    padding: 4,
+    marginLeft: 8,
+  },
+  clearSearchText: {
+    fontSize: 16,
+    color: '#95a5a6',
+    fontWeight: 'bold',
+  },
+  filtersContainer: {
+    backgroundColor: '#fff',
+    marginHorizontal: 8,
+    marginBottom: 16,
+    borderRadius: 12,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    zIndex: 100,
+  },
+  dropdownsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginBottom: 16,
+  },
+  dropdownContainer: {
+    flex: 1,
+    minWidth: 120,
+    position: 'relative',
+    zIndex: 10,
+  },
+  dropdownButton: {
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+    minHeight: 48,
+  },
+  dropdownLabel: {
+    fontSize: 11,
+    color: '#6c757d',
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  dropdownValue: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  dropdownValueText: {
+    fontSize: 14,
+    color: '#2c3e50',
+    fontWeight: '500',
+    flex: 1,
+  },
+  dropdownArrow: {
+    fontSize: 12,
+    color: '#6c757d',
+    marginLeft: 8,
+  },
+  dropdownMenu: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 20,
+    zIndex: 9999,
+    marginTop: 4,
+    maxHeight: 200,
+  },
+  dropdownOption: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f3f4',
+  },
+  dropdownOptionSelected: {
+    backgroundColor: '#e3f2fd',
+  },
+  dropdownOptionText: {
+    fontSize: 14,
+    color: '#2c3e50',
+    fontWeight: '500',
+  },
+  dropdownOptionTextSelected: {
+    color: '#1976d2',
+    fontWeight: '600',
+  },
+  clearAllButton: {
+    backgroundColor: '#e74c3c',
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    alignSelf: 'center',
+  },
+  clearAllButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+
   mapPlaceholder: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f8f9fa',
-    borderRadius: 8,
-    margin: 10,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 32,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   mapPlaceholderText: {
     fontSize: 18,
-    color: '#666',
+    color: '#2c3e50',
     textAlign: 'center',
     marginBottom: 8,
+    fontWeight: '600',
   },
   mapPlaceholderSubtext: {
     fontSize: 14,
-    color: '#999',
+    color: '#7f8c8d',
     textAlign: 'center',
+    lineHeight: 20,
   },
   sensorListTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: 'bold',
-    color: '#333',
+    color: '#2c3e50',
   },
   lastUpdateText: {
     fontSize: 12,
-    color: '#666',
+    color: '#7f8c8d',
   },
-  sensorItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 10,
+  searchResultsText: {
+    fontSize: 12,
+    color: '#6c757d',
+    fontStyle: 'italic',
+    marginTop: 4,
     marginBottom: 8,
-    backgroundColor: '#f8f9fa',
-    borderRadius: 8,
-    borderLeftWidth: 4,
-    borderLeftColor: '#4ECDC4',
   },
-  statusDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginRight: 12,
+  parkingSpot: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 6,
+    borderLeftWidth: 6,
+    borderLeftColor: '#27ae60',
   },
-  sensorInfo: {
+  parkingSpotSelected: {
+    borderLeftColor: '#e74c3c',
+    borderWidth: 2,
+    borderColor: '#e74c3c',
+    backgroundColor: '#fdf2f2',
+    shadowColor: '#e74c3c',
+    shadowOpacity: 0.2,
+  },
+  streetHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 16,
+  },
+  streetName: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#1a1a1a',
     flex: 1,
+    marginRight: 12,
+    lineHeight: 28,
   },
-  sensorTitle: {
+  headerRight: {
+    alignItems: 'flex-end',
+  },
+  statusBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+    marginBottom: 4,
+  },
+  availableBadge: {
+    backgroundColor: '#27ae60',
+    shadowColor: '#27ae60',
+  },
+  occupiedBadge: {
+    backgroundColor: '#e74c3c',
+    shadowColor: '#e74c3c',
+  },
+  statusLabel: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 'bold',
+    letterSpacing: 1,
+  },
+  clickHint: {
+    fontSize: 10,
+    color: '#95a5a6',
+    fontStyle: 'italic',
+  },
+  restrictionSection: {
+    marginBottom: 12,
+  },
+  signInfoContainer: {
+    backgroundColor: '#f8f9fa',
+    borderRadius: 12,
+    padding: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: '#3498db',
+  },
+  signTypeBadge: {
+    backgroundColor: '#3498db',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    alignSelf: 'flex-start',
+    marginBottom: 12,
+    shadowColor: '#3498db',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  signTypeText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    letterSpacing: 1,
+  },
+  timeInfoContainer: {
+    marginBottom: 8,
+  },
+  timeLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#7f8c8d',
+    marginBottom: 2,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  timeRange: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#333',
+    color: '#2c3e50',
   },
-  sensorStatus: {
+  daysContainer: {
+    marginBottom: 8,
+  },
+  daysLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#7f8c8d',
+    marginBottom: 2,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  daysText: {
     fontSize: 14,
-    color: '#666',
-    marginTop: 2,
-  },
-  sensorAddress: {
-    fontSize: 13,
-    color: '#333',
-    marginTop: 3,
     fontWeight: '500',
+    color: '#34495e',
   },
-  sensorRestriction: {
-    fontSize: 13,
-    marginTop: 3,
-    fontWeight: '500',
+  noRestrictionText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#3498db',
+    backgroundColor: '#f8f9fa',
+    padding: 16,
+    borderRadius: 12,
+    textAlign: 'center',
+    letterSpacing: 0.5,
+    borderLeftWidth: 4,
+    borderLeftColor: '#3498db',
   },
-  sensorLocation: {
-    fontSize: 11,
-    color: '#999',
-    marginTop: 2,
+  streetDetails: {
+    fontSize: 14,
+    color: '#7f8c8d',
+    fontStyle: 'italic',
+    marginTop: 8,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#ecf0f1',
+  },
+  noAvailableSpots: {
+    alignItems: 'center',
+    padding: 32,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    marginTop: 20,
+  },
+  noAvailableSpotsText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#e74c3c',
+    marginBottom: 4,
+  },
+  noAvailableSpotsSubtext: {
+    fontSize: 14,
+    color: '#7f8c8d',
+    textAlign: 'center',
   },
   loadingContainer: {
     flex: 1,
@@ -640,16 +1432,21 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   refreshButton: {
-    backgroundColor: '#4ECDC4',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 6,
+    backgroundColor: '#3498db',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 4,
   },
   refreshButtonText: {
     color: 'white',
-    fontSize: 14,
-    fontWeight: 'bold',
+    fontSize: 18,
   },
   lastUpdateContainer: {
     position: 'absolute',
@@ -661,10 +1458,6 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 8,
     alignItems: 'center',
-  },
-  lastUpdateText: {
-    fontSize: 12,
-    color: '#666',
   },
   retryButton: {
     marginTop: 8,
