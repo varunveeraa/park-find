@@ -10,6 +10,7 @@ import { loggingService } from '../../services/database/loggingService';
 import { webDatabaseService } from '../../services/database/webDatabaseService';
 import { ApiError, EnhancedParkingSensorMarker } from '../../types';
 import { calculateDistance, calculateDrivingTime, formatDistance, formatDrivingTime } from '../../utils/distance';
+import { hybridDistanceCalculator } from '../../utils/hybridDistanceCalculator';
 import { UserLocationDisplay } from '../location/UserLocationDisplay';
 import { ColorBlindToggleButton } from '../ui/ColorBlindToggleButton';
 import { ThemeToggleButton } from '../ui/ThemeToggleButton';
@@ -774,7 +775,7 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
     return filteredMarkers;
   }, [markersWithDistances, searchQuery, filterType, signTypeFilter, hoursFilter, sortType, userLocation]);
 
-  const generateMapHTML = () => {
+  const generateMapHTML = useCallback(() => {
     const markersData = markersWithDistances.map(marker => ({
       id: marker.id,
       lat: marker.coordinate.latitude,
@@ -789,6 +790,13 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
       isSelected: selectedMarker?.id === marker.id
     }));
 
+    // Include user location data if available
+    const userLocationData = userLocation ? {
+      lat: userLocation.coords.latitude,
+      lng: userLocation.coords.longitude,
+      accuracy: userLocation.coords.accuracy
+    } : null;
+
     return `
       <!DOCTYPE html>
       <html>
@@ -799,170 +807,364 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
           body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
           #map { height: 100vh; width: 100%; }
 
-          /* Custom popup styling */
-          .custom-popup .leaflet-popup-content-wrapper {
-            border-radius: 12px;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.15);
-            border: none;
-            padding: 0;
-          }
-
-          .custom-popup .leaflet-popup-content {
-            margin: 0;
-            padding: 10px;
-          }
-
-          .custom-popup .leaflet-popup-tip {
-            background: white;
-            border: none;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-          }
-
-          .leaflet-popup-close-button {
-            color: #95a5a6 !important;
-            font-size: 18px !important;
-            font-weight: bold !important;
-            padding: 8px !important;
-          }
-
-          .leaflet-popup-close-button:hover {
-            color: #e74c3c !important;
-            background: rgba(231, 76, 60, 0.1) !important;
-            border-radius: 50%;
-          }
-          .info-panel {
+          /* Location button styling */
+          .location-btn {
             position: absolute;
-            top: 10px;
-            left: 10px;
-            background: white;
-            padding: 15px;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            max-width: 300px;
-          }
-          .legend { margin-top: 10px; }
-          .legend-item { display: flex; align-items: center; margin: 5px 0; }
-          .legend-color { width: 20px; height: 20px; border-radius: 50%; margin-right: 10px; }
-          .available { background-color: #00FF00; }
-          .occupied { background-color: #FF0000; }
-          .refresh-btn {
-            background: #4ECDC4;
+            bottom: 20px;
+            right: 20px;
+            background: #4285F4;
             color: white;
             border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
+            padding: 12px;
+            border-radius: 50%;
             cursor: pointer;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+            z-index: 1000;
+            width: 48px;
+            height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+          }
+          .location-btn:hover {
+            background: #3367d6;
+          }
+          .location-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+          }
+
+          /* Custom info window styling */
+          .custom-info-window {
+            min-width: 250px;
+            font-family: Arial, sans-serif;
+          }
+          .info-title {
+            margin: 0 0 10px 0;
+            color: #2c3e50;
+            font-size: 16px;
+            font-weight: bold;
+          }
+          .info-section {
+            margin: 8px 0;
+            line-height: 1.4;
+          }
+          .info-label {
+            font-weight: bold;
+            color: #34495e;
+          }
+          .status-available {
+            color: #00AA00;
+            font-weight: bold;
+          }
+          .status-occupied {
+            color: #FF0000;
+            font-weight: bold;
+          }
+          .directions-btn {
+            display: inline-block;
+            background-color: #4285f4;
+            color: white;
+            padding: 8px 16px;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: bold;
+            font-size: 14px;
             margin-top: 10px;
           }
-        </style>
-        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-      </head>
-      <body>
-        <div id="map"></div>
-        <div class="info-panel">
-          <h3>Melbourne Parking Sensors</h3>
-          <p>Total sensors: ${markersWithDistances.length}</p>
-          <p>Available: ${markersWithDistances.filter(m => !m.isOccupied).length}</p>
-          <p>Not Available: ${markersWithDistances.filter(m => m.isOccupied).length}</p>
-          <div class="legend">
-            <div class="legend-item">
-              <div class="legend-color available"></div>
-              <span>Available</span>
-            </div>
-            <div class="legend-item">
-              <div class="legend-color occupied"></div>
-              <span>Not Available</span>
-            </div>
-          </div>
-          <button class="refresh-btn" onclick="window.location.reload()">Refresh Data</button>
-        </div>
-
-        <script>
-          function initMap() {
-            // Initialize Leaflet map
-            const map = L.map('map').setView([-37.8136, 144.9631], 13);
-
-            // Add OpenStreetMap tiles
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-              attribution: '© OpenStreetMap contributors'
-            }).addTo(map);
-
-            const markers = ${JSON.stringify(markersData)};
-
-            // Add markers to map
-            const markerObjects = {};
-            markers.forEach(markerData => {
-              const marker = L.circleMarker([markerData.lat, markerData.lng], {
-                radius: markerData.isSelected ? 12 : 8,
-                fillColor: markerData.isSelected ? '#e74c3c' : markerData.color,
-                color: '#fff',
-                weight: markerData.isSelected ? 3 : 2,
-                opacity: 1,
-                fillOpacity: markerData.isSelected ? 1 : 0.8
-              }).addTo(map);
-
-              // Store marker reference
-              markerObjects[markerData.id] = marker;
-
-              // Simple popup for now to get map working
-              const googleMapsUrl = 'https://www.google.com/maps/dir/?api=1&destination=' + markerData.lat + ',' + markerData.lng;
-              const popupContent = '<div style="min-width: 250px; font-family: Arial, sans-serif;">' +
-                '<h4 style="margin: 0 0 10px 0; color: #2c3e50;">🅿️ ' + markerData.title + '</h4>' +
-                '<p style="margin: 5px 0;"><strong>📍 Location:</strong><br>' + markerData.streetAddress + '</p>' +
-                '<p style="margin: 5px 0;"><strong>🅿️ Restriction:</strong><br>' + markerData.restriction + '</p>' +
-                '<p style="margin: 5px 0;"><strong>📊 Status:</strong><br>' +
-                (markerData.isOccupied ? '<span style="color: #FF0000;">❌ Not Available</span>' : '<span style="color: #00FF00;">✅ Available</span>') +
-                '</p>' +
-                '<p style="margin: 5px 0; font-size: 12px; color: #7f8c8d;">Last updated: ' + new Date().toLocaleTimeString() + '</p>' +
-                '<div style="margin-top: 15px; text-align: center;">' +
-                '<a href="' + googleMapsUrl + '" target="_blank" rel="noopener noreferrer" ' +
-                'style="display: inline-block; background-color: #4285f4; color: white; padding: 8px 16px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 14px;">' +
-                '🧭 Get Directions' +
-                '</a>' +
-                '</div>' +
-                '</div>';
-              marker.bindPopup(popupContent, {
-                maxWidth: 350,
-                className: 'custom-popup'
-              });
-
-              // Auto-open popup if this marker is selected
-              if (markerData.isSelected) {
-                marker.openPopup();
-                map.setView([markerData.lat, markerData.lng], Math.max(map.getZoom(), 16));
-              }
-            });
-
-            // Add legend
-            const legend = L.control({position: 'bottomright'});
-            legend.onAdd = function (map) {
-              const div = L.DomUtil.create('div', 'info legend');
-              div.innerHTML = '<h4>Parking Status</h4>' +
-                '<i style="background: #00FF00; width: 18px; height: 18px; border-radius: 50%; display: inline-block; margin-right: 8px;"></i> Available<br>' +
-                '<i style="background: #FF0000; width: 18px; height: 18px; border-radius: 50%; display: inline-block; margin-right: 8px;"></i> Not Available';
-              div.style.background = 'white';
-              div.style.padding = '10px';
-              div.style.borderRadius = '5px';
-              div.style.boxShadow = '0 0 15px rgba(0,0,0,0.2)';
-              return div;
-            };
-            legend.addTo(map);
+          .directions-btn:hover {
+            background-color: #3367d6;
+          }
+          .last-updated {
+            font-size: 12px;
+            color: #7f8c8d;
+            margin-top: 8px;
           }
 
-          window.onload = initMap;
+          /* Pulse animation for user location */
+          @keyframes pulse {
+            0% {
+              transform: scale(1);
+              opacity: 0.6;
+            }
+            50% {
+              transform: scale(1.2);
+              opacity: 0.3;
+            }
+            100% {
+              transform: scale(1);
+              opacity: 0.6;
+            }
+          }
+        </style>
+      </head>
+      <body>
+        <!-- Test message -->
+        <div id="status" style="position: absolute; top: 10px; left: 10px; background: white; padding: 10px; border-radius: 4px; z-index: 1000; font-family: Arial;">
+          Loading Google Maps...
+        </div>
+
+        <div id="map"></div>
+
+        <!-- Location button -->
+        <button class="location-btn" id="locationBtn" onclick="centerOnUserLocation()" title="Center on my location">
+          📍
+        </button>
+
+        <script>
+          let map;
+          let infoWindow;
+          let userLocationMarker = null;
+          let userLocationCircle = null; // Fix: Add missing variable
+          let parkingMarkers = [];
+          const markersData = ${JSON.stringify(markersData)};
+          const userLocationData = ${JSON.stringify(userLocationData)};
+
+          function initMap() {
+            console.log('initMap called');
+            document.getElementById('status').textContent = 'Initializing map...';
+
+            // Check if Google Maps is loaded
+            if (!window.google || !window.google.maps) {
+              console.error('Google Maps not loaded');
+              document.getElementById('status').textContent = 'Google Maps failed to load';
+              handleGoogleMapsError();
+              return;
+            }
+
+            console.log('Google Maps API loaded successfully');
+            document.getElementById('status').textContent = 'Creating map...';
+
+            // Initialize the map
+            map = new google.maps.Map(document.getElementById("map"), {
+              zoom: 13,
+              center: { lat: -37.8136, lng: 144.9631 },
+              styles: [
+                {
+                  featureType: "poi",
+                  elementType: "labels",
+                  stylers: [{ visibility: "off" }]
+                }
+              ]
+            });
+
+            // Create info window
+            infoWindow = new google.maps.InfoWindow();
+
+            console.log('Map created successfully');
+            document.getElementById('status').textContent = 'Adding markers...';
+
+            // Add parking markers
+            markersData.forEach(markerData => {
+              // Create standard marker
+              const marker = new google.maps.Marker({
+                position: { lat: markerData.lat, lng: markerData.lng },
+                map: map,
+                title: markerData.title,
+                icon: {
+                  path: google.maps.SymbolPath.CIRCLE,
+                  fillColor: markerData.isSelected ? '#e74c3c' : markerData.color,
+                  fillOpacity: 0.8,
+                  strokeColor: '#ffffff',
+                  strokeWeight: markerData.isSelected ? 3 : 2,
+                  scale: markerData.isSelected ? 12 : 8
+                }
+              });
+
+              // Create info window content
+              const googleMapsUrl = 'https://www.google.com/maps/dir/?api=1&destination=' + markerData.lat + ',' + markerData.lng;
+              const infoContent = \`
+                <div class="custom-info-window">
+                  <h4 class="info-title">🅿️ \${markerData.title}</h4>
+                  <div class="info-section"><span class="info-label">📍 Location:</span><br>\${markerData.streetAddress}</div>
+                  <div class="info-section"><span class="info-label">🅿️ Restriction:</span><br>\${markerData.restriction}</div>
+                  <div class="info-section"><span class="info-label">📊 Status:</span><br>
+                    \${markerData.isOccupied ?
+                      '<span class="status-occupied">❌ Not Available</span>' :
+                      '<span class="status-available">✅ Available</span>'}
+                  </div>
+                  <div class="last-updated">Last updated: \${new Date().toLocaleTimeString()}</div>
+                  <div style="text-align: center; margin-top: 15px;">
+                    <a href="\${googleMapsUrl}" target="_blank" rel="noopener noreferrer" class="directions-btn">
+                      🧭 Get Directions
+                    </a>
+                  </div>
+                </div>
+              \`;
+
+              // Add click listener
+              marker.addListener('click', () => {
+                infoWindow.setContent(infoContent);
+                infoWindow.open(map, marker);
+              });
+
+              // Auto-open info window if this marker is selected
+              if (markerData.isSelected) {
+                setTimeout(() => {
+                  infoWindow.setContent(infoContent);
+                  infoWindow.open(map, marker);
+                  map.setCenter({ lat: markerData.lat, lng: markerData.lng });
+                  map.setZoom(16);
+                }, 100);
+              }
+
+              parkingMarkers.push(marker);
+            });
+
+            // Add user location marker if available
+            if (userLocationData) {
+              // Remove existing user location markers
+              if (userLocationMarker) {
+                userLocationMarker.setMap(null);
+              }
+              if (userLocationCircle) {
+                userLocationCircle.setMap(null);
+              }
+
+              // Create accuracy circle
+              userLocationCircle = new google.maps.Circle({
+                strokeColor: '#4285F4',
+                strokeOpacity: 0.8,
+                strokeWeight: 2,
+                fillColor: '#4285F4',
+                fillOpacity: 0.15,
+                map: map,
+                center: { lat: userLocationData.lat, lng: userLocationData.lng },
+                radius: userLocationData.accuracy || 50 // accuracy in meters
+              });
+
+              // Create user location marker
+              userLocationMarker = new google.maps.Marker({
+                position: { lat: userLocationData.lat, lng: userLocationData.lng },
+                map: map,
+                title: 'Your Location',
+                icon: {
+                  path: google.maps.SymbolPath.CIRCLE,
+                  fillColor: '#4285F4',
+                  fillOpacity: 1,
+                  strokeColor: '#ffffff',
+                  strokeWeight: 3,
+                  scale: 8
+                },
+                zIndex: 1000 // Ensure user marker appears above parking markers
+              });
+
+              // Add info window for user location
+              const userInfoContent = '<div class="custom-info-window">' +
+                '<h4 class="info-title">📍 Your Location</h4>' +
+                '<div class="info-section">Accuracy: ±' + Math.round(userLocationData.accuracy || 50) + ' meters</div>' +
+                '<div class="info-section">Coordinates: ' + userLocationData.lat.toFixed(6) + ', ' + userLocationData.lng.toFixed(6) + '</div>' +
+                '</div>';
+
+              userLocationMarker.addListener('click', () => {
+                infoWindow.setContent(userInfoContent);
+                infoWindow.open(map, userLocationMarker);
+              });
+
+              // Center map on user location if no specific marker is selected
+              if (!${JSON.stringify(selectedMarker)}) {
+                map.setCenter({ lat: userLocationData.lat, lng: userLocationData.lng });
+                map.setZoom(15); // Zoom in when showing user location
+              }
+            }
+
+            // Update location button visibility
+            const locationBtn = document.getElementById('locationBtn');
+            if (locationBtn) {
+              locationBtn.style.display = userLocationData ? 'flex' : 'none';
+            }
+
+            // Hide status message and show success
+            setTimeout(() => {
+              const statusEl = document.getElementById('status');
+              if (statusEl) {
+                statusEl.textContent = '✅ Map loaded successfully';
+                setTimeout(() => {
+                  statusEl.style.display = 'none';
+                }, 2000);
+              }
+            }, 500);
+          }
+
+          // Function to center map on user location
+          function centerOnUserLocation() {
+            const userLocationData = ${JSON.stringify(userLocationData)};
+            if (userLocationData && map) {
+              map.setCenter({ lat: userLocationData.lat, lng: userLocationData.lng });
+              map.setZoom(16);
+
+              // Open user location info window if marker exists
+              if (userLocationMarker && infoWindow) {
+                const userInfoContent = '<div class="custom-info-window">' +
+                  '<h4 class="info-title">📍 Your Location</h4>' +
+                  '<div class="info-section">Accuracy: ±' + Math.round(userLocationData.accuracy || 50) + ' meters</div>' +
+                  '<div class="info-section">Coordinates: ' + userLocationData.lat.toFixed(6) + ', ' + userLocationData.lng.toFixed(6) + '</div>' +
+                  '</div>';
+                infoWindow.setContent(userInfoContent);
+                infoWindow.open(map, userLocationMarker);
+              }
+            }
+          }
+
+          // Simplified error handling
+          window.gm_authFailure = function() {
+            console.error('Google Maps authentication failed');
+            document.getElementById('status').textContent = '❌ API key authentication failed';
+          };
+
+          // Make functions globally available
+          window.initMap = initMap;
+          window.centerOnUserLocation = centerOnUserLocation;
+        </script>
+
+        <!-- Google Maps JavaScript API - With Your New API Key -->
+        <script
+          src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCMRDPXKYVQU8n3n0LK3ipTRhtAxXWky1I&callback=initMap&v=weekly&loading=async"
+          async
+          defer
+        ></script>
+
+        <script>
+          // Fallback error handler
+          function handleGoogleMapsError() {
+            console.error('Failed to load Google Maps script');
+            document.getElementById('map').innerHTML =
+              '<div style="display: flex; align-items: center; justify-content: center; height: 100%; background: #f5f5f5; color: #666; text-align: center; padding: 20px;">' +
+              '<div>' +
+              '<h3>🗺️ Map Loading Issue</h3>' +
+              '<p>Google Maps failed to load. Common solutions:</p>' +
+              '<ul style="text-align: left; display: inline-block; margin: 20px 0;">' +
+              '<li><strong>API Key Restrictions:</strong> Check if localhost:8083 is allowed</li>' +
+              '<li><strong>Billing:</strong> Ensure billing is enabled in Google Cloud Console</li>' +
+              '<li><strong>APIs:</strong> Enable Maps JavaScript API</li>' +
+              '<li><strong>Browser:</strong> Try refreshing or different browser</li>' +
+              '</ul>' +
+              '<button onclick="window.location.reload()" style="background: #4285f4; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer;">🔄 Retry</button>' +
+              '<p style="margin-top: 20px; font-size: 14px;">The parking list still works normally.</p>' +
+              '</div>' +
+              '</div>';
+          }
+
+          // Timeout fallback - give more time for slow connections
+          setTimeout(function() {
+            if (!window.google || !window.google.maps) {
+              console.warn('Google Maps not loaded after 15 seconds, showing fallback');
+              handleGoogleMapsError();
+            }
+          }, 15000); // 15 second timeout
         </script>
       </body>
       </html>
     `;
-  };
+  }, [markersWithDistances, selectedMarker, userLocation]);
 
   // Generate map HTML when markers or selected marker changes
   useEffect(() => {
     if (markersWithDistances.length > 0) {
       setMapHtml(generateMapHTML());
     }
-  }, [markersWithDistances, selectedMarker]);
+  }, [markersWithDistances, selectedMarker, generateMapHTML]);
 
   if (loading && markers.length === 0) {
     return (
@@ -1062,39 +1264,7 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
               showRefreshButton={true}
             />
 
-            {/* Routing Toggle */}
-            {routingStats && (
-              <View style={styles.routingContainer}>
-                <View style={styles.routingToggleContainer}>
-                  <Text style={styles.routingLabel}>
-                    🗺️ Road Routing {routingStats.apiConfigured ? '' : '(API key required)'}
-                  </Text>
-                  <TouchableOpacity
-                    style={[
-                      styles.routingToggle,
-                      useRouting && routingStats.enabled ? styles.routingToggleActive : styles.routingToggleInactive
-                    ]}
-                    onPress={() => setUseRouting(!useRouting)}
-                    disabled={!routingStats.enabled}
-                  >
-                    <Text style={styles.routingToggleText}>
-                      {useRouting && routingStats.enabled ? 'ON' : 'OFF'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-                {distanceCalculating && (
-                  <View style={styles.calculatingContainer}>
-                    <ActivityIndicator size="small" color={colors.info} />
-                    <Text style={styles.calculatingText}>Calculating routes...</Text>
-                  </View>
-                )}
-                {useRouting && routingStats.enabled && (
-                  <Text style={styles.routingHelpText}>
-                    Using road routing for accurate driving distances and times
-                  </Text>
-                )}
-              </View>
-            )}
+
 
             {/* Search Bar */}
             <View style={styles.searchContainer}>
