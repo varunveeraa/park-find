@@ -775,6 +775,38 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
     return filteredMarkers;
   }, [markersWithDistances, searchQuery, filterType, signTypeFilter, hoursFilter, sortType, userLocation]);
 
+  // Calculate bounds and center for all markers
+  const calculateMarkersBounds = useCallback((markers: EnhancedParkingSensorMarker[]) => {
+    if (markers.length === 0) {
+      return {
+        center: { lat: -37.8136, lng: 144.9631 }, // Default Melbourne center
+        bounds: null
+      };
+    }
+
+    const lats = markers.map(m => m.coordinate.latitude);
+    const lngs = markers.map(m => m.coordinate.longitude);
+
+    const minLat = Math.min(...lats);
+    const maxLat = Math.max(...lats);
+    const minLng = Math.min(...lngs);
+    const maxLng = Math.max(...lngs);
+
+    // Calculate center (midpoint)
+    const centerLat = (minLat + maxLat) / 2;
+    const centerLng = (minLng + maxLng) / 2;
+
+    return {
+      center: { lat: centerLat, lng: centerLng },
+      bounds: {
+        north: maxLat,
+        south: minLat,
+        east: maxLng,
+        west: minLng
+      }
+    };
+  }, []);
+
   const generateMapHTML = useCallback(() => {
     const markersData = markersWithDistances.map(marker => ({
       id: marker.id,
@@ -789,6 +821,9 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
       streetAddress: marker.streetAddress || 'Address not available',
       isSelected: selectedMarker?.id === marker.id
     }));
+
+    // Calculate bounds for auto-zoom
+    const markersBounds = calculateMarkersBounds(markersWithDistances);
 
     // Include user location data if available
     const userLocationData = userLocation ? {
@@ -920,6 +955,7 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
           let parkingMarkers = [];
           const markersData = ${JSON.stringify(markersData)};
           const userLocationData = ${JSON.stringify(userLocationData)};
+          const markersBounds = ${JSON.stringify(markersBounds)};
 
           function initMap() {
             console.log('initMap called');
@@ -936,10 +972,10 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
             console.log('Google Maps API loaded successfully');
             document.getElementById('status').textContent = 'Creating map...';
 
-            // Initialize the map
+            // Initialize the map with calculated center
             map = new google.maps.Map(document.getElementById("map"), {
-              zoom: 13,
-              center: { lat: -37.8136, lng: 144.9631 },
+              zoom: 13, // Will be adjusted after markers are added
+              center: markersBounds.center,
               styles: [
                 {
                   featureType: "poi",
@@ -1012,6 +1048,31 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
               parkingMarkers.push(marker);
             });
 
+            // Auto-zoom to fit all markers if bounds are available and no specific marker is selected
+            if (markersBounds.bounds && markersData.length > 0 && !${JSON.stringify(selectedMarker)}) {
+              const bounds = new google.maps.LatLngBounds();
+              bounds.extend(new google.maps.LatLng(markersBounds.bounds.south, markersBounds.bounds.west));
+              bounds.extend(new google.maps.LatLng(markersBounds.bounds.north, markersBounds.bounds.east));
+
+              // Add some padding around the bounds
+              map.fitBounds(bounds, {
+                top: 50,
+                right: 50,
+                bottom: 50,
+                left: 50
+              });
+
+              // Ensure minimum zoom level for better visibility
+              google.maps.event.addListenerOnce(map, 'bounds_changed', function() {
+                if (map.getZoom() > 16) {
+                  map.setZoom(16);
+                }
+                if (map.getZoom() < 10) {
+                  map.setZoom(10);
+                }
+              });
+            }
+
             // Add user location marker if available
             if (userLocationData) {
               // Remove existing user location markers
@@ -1062,8 +1123,8 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
                 infoWindow.open(map, userLocationMarker);
               });
 
-              // Center map on user location if no specific marker is selected
-              if (!${JSON.stringify(selectedMarker)}) {
+              // Only center on user location if no markers are available for auto-zoom and no specific marker is selected
+              if (!${JSON.stringify(selectedMarker)} && (!markersBounds.bounds || markersData.length === 0)) {
                 map.setCenter({ lat: userLocationData.lat, lng: userLocationData.lng });
                 map.setZoom(15); // Zoom in when showing user location
               }
@@ -1157,7 +1218,7 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
       </body>
       </html>
     `;
-  }, [markersWithDistances, selectedMarker, userLocation]);
+  }, [markersWithDistances, selectedMarker, userLocation, calculateMarkersBounds]);
 
   // Generate map HTML when markers or selected marker changes
   useEffect(() => {
@@ -1455,12 +1516,18 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
                           style={styles.bookmarkButton}
                           onPress={() => toggleSaved(marker)}
                         >
-                          <Text style={[
-                            styles.bookmarkIcon,
-                            savedIds.has(marker.id) ? styles.bookmarkFilled : styles.bookmarkEmpty
-                          ]}>
-                            {savedIds.has(marker.id) ? '🔖' : '🏷️'}
-                          </Text>
+                          <View style={styles.bookmarkIconContainer}>
+                            <View style={[
+                              styles.bookmarkShape,
+                              savedIds.has(marker.id) ? styles.bookmarkShapeFilled : styles.bookmarkShapeEmpty
+                            ]}>
+                              {/* Create the bookmark notch using clip-path effect */}
+                              <View style={[
+                                styles.bookmarkNotch,
+                                savedIds.has(marker.id) ? styles.bookmarkNotchFilled : styles.bookmarkNotchEmpty
+                              ]} />
+                            </View>
+                          </View>
                         </TouchableOpacity>
                       </View>
                       <Text style={styles.clickHint}>
@@ -2158,7 +2225,7 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
     backgroundColor: colors.cardBackground,
     borderRadius: 8,
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 12,
     marginBottom: 6,
     marginHorizontal: 12,
     shadowColor: colors.shadow,
@@ -2168,6 +2235,7 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
     elevation: 3,
     borderLeftWidth: 3,
     borderLeftColor: colors.available,
+    overflow: 'visible', // Ensure bookmark icon isn't clipped
   },
   parkingSpotSelected: {
     borderLeftColor: colors.error,
@@ -2182,6 +2250,7 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     marginBottom: 16,
+    minHeight: 40, // Ensure enough height for bookmark icon
   },
   streetNameContainer: {
     flex: 1,
@@ -2216,23 +2285,76 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
   },
   headerRight: {
     alignItems: 'flex-end',
+    minHeight: 40, // Ensure enough height for bookmark icon
   },
   topRightRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    minHeight: 36, // Ensure enough height for bookmark
   },
   bookmarkButton: {
-    padding: 4,
+    padding: 6,
+    margin: 4,
+    borderRadius: 4,
+    backgroundColor: 'transparent',
+    width: 28,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  bookmarkIcon: {
-    fontSize: 20,
+  bookmarkIconContainer: {
+    width: 16,
+    height: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingBottom: 8, // More padding to show the notch
+  },
+  bookmarkShape: {
+    width: 10,
+    height: 12,
+    borderTopLeftRadius: 1,
+    borderTopRightRadius: 1,
+    borderWidth: 1,
+    position: 'relative',
+  },
+  bookmarkShapeFilled: {
+    backgroundColor: colors.buttonPrimary,
+    borderColor: colors.buttonPrimary,
+    shadowColor: colors.buttonPrimary,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.3,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  bookmarkShapeEmpty: {
+    backgroundColor: 'transparent',
+    borderColor: colors.textSecondary,
+  },
+  bookmarkNotch: {
+    position: 'absolute',
+    bottom: -1,
+    left: '50%',
+    marginLeft: -2,
+    width: 0,
+    height: 0,
+    borderLeftWidth: 2,
+    borderRightWidth: 2,
+    borderBottomWidth: 3,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+  },
+  bookmarkNotchFilled: {
+    borderBottomColor: colors.background,
+  },
+  bookmarkNotchEmpty: {
+    borderBottomColor: colors.background,
   },
   bookmarkFilled: {
-    // Bookmark emoji already colored
+    // Legacy - kept for compatibility
   },
   bookmarkEmpty: {
-    // Empty bookmark emoji already colored
+    // Legacy - kept for compatibility
   },
   statusBadge: {
     paddingHorizontal: 8,

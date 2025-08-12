@@ -200,7 +200,11 @@ export default function SavedScreen() {
             onPress={() => removeSaved(item.id)}
             activeOpacity={0.8}
           >
-            <Text style={styles.removeIcon}>🔖</Text>
+            <View style={styles.removeIconContainer}>
+              <View style={styles.bookmarkShape}>
+                <View style={styles.bookmarkNotch} />
+              </View>
+            </View>
           </TouchableOpacity>
         </View>
       </View>
@@ -255,7 +259,7 @@ export default function SavedScreen() {
             Start adding parking spots to your saved spots from the Parking Map screen.
           </Text>
           <Text style={styles.emptyHint}>
-            💡 Tip: Tap the bookmark icon on any parking spot to save it here!
+            💡 Tip: Tap the save icon on any parking spot to save it here!
           </Text>
         </View>
       ) : (
@@ -511,9 +515,9 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
     color: '#fff',
   },
   removeButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     backgroundColor: colors.cardBackground,
     justifyContent: 'center',
     alignItems: 'center',
@@ -524,9 +528,43 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 2,
+    margin: 4,
   },
-  removeIcon: {
-    fontSize: 20,
+  removeIconContainer: {
+    width: 16,
+    height: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingBottom: 8, // More padding to show the notch
+  },
+  bookmarkShape: {
+    width: 10,
+    height: 12,
+    borderTopLeftRadius: 1,
+    borderTopRightRadius: 1,
+    borderWidth: 1,
+    position: 'relative',
+    backgroundColor: colors.error,
+    borderColor: colors.error,
+    shadowColor: colors.error,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.3,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  bookmarkNotch: {
+    position: 'absolute',
+    bottom: -1,
+    left: '50%',
+    marginLeft: -2,
+    width: 0,
+    height: 0,
+    borderLeftWidth: 2,
+    borderRightWidth: 2,
+    borderBottomWidth: 3,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderBottomColor: colors.cardBackground,
   },
   cardAccent: {
     height: 1,
