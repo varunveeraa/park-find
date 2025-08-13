@@ -1259,9 +1259,6 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
           <View style={styles.headerActions}>
             <ColorBlindToggleButton size={20} />
             <ThemeToggleButton size={20} />
-            <TouchableOpacity style={styles.refreshButton} onPress={handleManualRefresh}>
-              <Text style={styles.refreshButtonText}>↻</Text>
-            </TouchableOpacity>
           </View>
         </View>
 
@@ -1279,9 +1276,11 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
                   {searchQuery.trim() ? 'Search Results' : 'Parking Spots'}
                 </Text>
               </View>
-              <Text style={styles.lastUpdateText}>
-                ↻ {lastRefresh.toLocaleTimeString()}
-              </Text>
+              <TouchableOpacity onPress={handleManualRefresh} activeOpacity={0.7}>
+                <Text style={styles.lastUpdateText}>
+                  ↻ {lastRefresh.toLocaleTimeString()}
+                </Text>
+              </TouchableOpacity>
             </View>
 
             {/* Stats Section */}
@@ -1340,19 +1339,6 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
                 autoCapitalize="words"
                 autoCorrect={false}
               />
-              {speechSupported && (
-                <TouchableOpacity
-                  style={[styles.speechButton, isListening && styles.speechButtonActive]}
-                  onPress={toggleSpeechRecognition}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.micIcon}>
-                    <View style={[styles.micBody, isListening && styles.micBodyActive]} />
-                    <View style={[styles.micStand, isListening && styles.micStandActive]} />
-                    <View style={[styles.micBase, isListening && styles.micBaseActive]} />
-                  </View>
-                </TouchableOpacity>
-              )}
               {searchQuery.length > 0 && (
                 <TouchableOpacity
                   style={styles.clearSearchButton}
@@ -1362,6 +1348,19 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
                 </TouchableOpacity>
               )}
             </View>
+            {speechSupported && (
+              <TouchableOpacity
+                style={[styles.speechButton, isListening && styles.speechButtonActive]}
+                onPress={toggleSpeechRecognition}
+                activeOpacity={0.7}
+              >
+                <View style={styles.micIcon}>
+                  <View style={[styles.micBody, isListening && styles.micBodyActive]} />
+                  <View style={[styles.micStand, isListening && styles.micStandActive]} />
+                  <View style={[styles.micBase, isListening && styles.micBaseActive]} />
+                </View>
+              </TouchableOpacity>
+            )}
             {isListening && (
               <TouchableOpacity
                 style={styles.listeningIndicator}
@@ -1880,10 +1879,14 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
     flex: 1,
   },
   searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingVertical: 4,
     backgroundColor: 'transparent',
+    gap: 8,
   },
   searchInputContainer: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.inputBackground,
@@ -1910,46 +1913,29 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
     paddingVertical: 0,
   },
   speechButton: {
-    padding: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
     marginLeft: 8,
-    borderRadius: 20,
-    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+    backgroundColor: colors.inputBackground,
     borderWidth: 1,
-    borderColor: '#e9ecef',
-    minWidth: 36,
+    borderColor: colors.inputBorder,
+    minWidth: 44,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: colors.shadow,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 2,
   },
   speechButtonActive: {
-    backgroundColor: '#e74c3c',
-    borderColor: '#e74c3c',
-  },
-  speechButtonText: {
-    fontSize: 16,
-    color: '#6c757d',
-  },
-  speechButtonTextActive: {
-    color: '#fff',
+    backgroundColor: colors.buttonPrimary,
+    borderColor: colors.buttonPrimary,
   },
   clearSearchButton: {
     padding: 4,
     marginLeft: 8,
-  },
-  speechButton: {
-    padding: 10,
-    marginLeft: 8,
-    borderRadius: 24,
-    backgroundColor: '#f8f9fa',
-    borderWidth: 2,
-    borderColor: '#e9ecef',
-    minWidth: 48,
-    minHeight: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  speechButtonActive: {
-    backgroundColor: '#4285f4',
-    borderColor: '#4285f4',
   },
   micIcon: {
     alignItems: 'center',
@@ -2043,7 +2029,7 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 12,
-    marginBottom: 16,
+    marginBottom: 4,
     zIndex: 10000,
     elevation: 10000,
   },
@@ -2059,11 +2045,16 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
   },
   dropdownButton: {
     backgroundColor: colors.buttonSecondary,
-    borderRadius: 6,
-    padding: 8,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 6, // Match search bar height
     borderWidth: 1,
     borderColor: colors.borderLight,
-    minHeight: 36,
+    shadowColor: colors.shadow,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 2,
   },
   dropdownLabel: {
     fontSize: 11,
@@ -2071,7 +2062,7 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
     fontWeight: '600',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
-    marginBottom: 4,
+    marginBottom: 0, // Remove margin to match search bar height
   },
   dropdownValue: {
     flexDirection: 'row',
@@ -2210,10 +2201,15 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
     letterSpacing: 0.3,
   },
   lastUpdateText: {
-    fontSize: 11,
-    color: colors.textSecondary,
-    fontWeight: '500',
-    opacity: 0.8,
+    fontSize: 12,
+    color: colors.buttonPrimary,
+    fontWeight: '600',
+    opacity: 0.9,
+    backgroundColor: colors.buttonPrimary + '15',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    overflow: 'hidden',
   },
   searchResultsText: {
     fontSize: 12,
@@ -2295,20 +2291,20 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
   },
   bookmarkButton: {
     padding: 6,
-    margin: 4,
+    margin: 0, // Remove margin for better alignment
     borderRadius: 4,
     backgroundColor: 'transparent',
     width: 28,
-    height: 36,
+    height: 40, // Increased height to accommodate full bookmark icon
     alignItems: 'center',
     justifyContent: 'center',
   },
   bookmarkIconContainer: {
     width: 16,
-    height: 22,
+    height: 26, // Increased height to show full bookmark
     alignItems: 'center',
     justifyContent: 'center',
-    paddingBottom: 8, // More padding to show the notch
+    paddingBottom: 4, // Enough padding to show the notch
   },
   bookmarkShape: {
     width: 10,
@@ -2364,7 +2360,7 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 2,
     elevation: 2,
-    marginBottom: 2,
+    marginBottom: 0, // Remove margin for better alignment
   },
   availableBadge: {
     backgroundColor: colors.available,

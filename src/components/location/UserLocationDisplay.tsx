@@ -242,34 +242,24 @@ export const UserLocationDisplay: React.FC<UserLocationDisplayProps> = ({
     <View style={styles.container}>
       <View style={styles.locationContainer}>
         <View style={styles.locationInfo}>
-          <View style={styles.locationHeader}>
-            <View style={styles.locationIcon}>
-              <View style={styles.locationPin}>
-                <View style={styles.locationPinHead} />
-                <View style={styles.locationPinTail} />
-              </View>
-            </View>
-            <View style={styles.locationDetails}>
-              {(address || addressLoading) ? (
-                <>
-                  <Text style={styles.addressText}>
-                    {addressLoading ? 'Getting address...' : address}
-                  </Text>
-                  <Text style={styles.coordinatesText}>
-                    {locationData.lat}, {locationData.lng}
-                  </Text>
-                </>
-              ) : (
-                <Text style={styles.addressText}>
-                  {locationData.lat}, {locationData.lng}
-                </Text>
-              )}
-            </View>
-            <View style={styles.accuracyContainer}>
-              <View style={styles.accuracyDot} />
-              <Text style={styles.accuracyText}>±{accuracy}m</Text>
-            </View>
-          </View>
+          {(address || addressLoading) ? (
+            <>
+              <Text style={styles.fromLabel}>From</Text>
+              <Text style={styles.addressText}>
+                {addressLoading ? 'Getting address...' : address}
+              </Text>
+              <Text style={styles.coordinatesText}>
+                {locationData.lat}, {locationData.lng} (±{accuracy}m)
+              </Text>
+            </>
+          ) : (
+            <>
+              <Text style={styles.fromLabel}>From</Text>
+              <Text style={styles.addressText}>
+                {locationData.lat}, {locationData.lng} (±{accuracy}m)
+              </Text>
+            </>
+          )}
         </View>
 
         {showRefreshButton && (
@@ -306,85 +296,32 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
   },
   locationInfo: {
     flex: 1,
-  },
-  locationHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    width: '100%',
-  },
-  locationIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.backgroundTertiary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-    borderWidth: 2,
-    borderColor: colors.border,
-  },
-  locationPin: {
-    alignItems: 'center',
+    paddingVertical: 4,
+    paddingHorizontal: 12,
     justifyContent: 'center',
   },
-  locationPinHead: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: colors.error,
-    borderWidth: 2,
-    borderColor: colors.buttonText,
-    shadowColor: colors.error,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.3,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  locationPinTail: {
-    width: 2,
-    height: 6,
-    backgroundColor: colors.error,
-    marginTop: -1,
-    borderRadius: 1,
-  },
-  locationDetails: {
-    flex: 1,
-    paddingTop: 2,
-    paddingRight: 12,
+  fromLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 4,
+    opacity: 0.7,
   },
   addressText: {
     fontSize: 16,
     fontWeight: '700',
     color: colors.text,
-    marginBottom: 4,
-    letterSpacing: 0.2,
+    letterSpacing: 0.1,
+    marginBottom: 6,
+    lineHeight: 20,
   },
   coordinatesText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '500',
     color: colors.textSecondary,
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-    marginBottom: 6,
-    opacity: 0.8,
-  },
-  accuracyContainer: {
-    flexDirection: 'column',
-    alignItems: 'center',
-    paddingTop: 2,
-  },
-  accuracyDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.success,
-    marginBottom: 4,
-  },
-  accuracyText: {
-    fontSize: 10,
-    color: colors.textSecondary,
-    fontWeight: '600',
-    textAlign: 'center',
     opacity: 0.8,
   },
   refreshButton: {
