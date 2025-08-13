@@ -4,6 +4,7 @@ import * as Location from 'expo-location';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, AppState, Dimensions, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useTheme } from '../../contexts/ThemeContext';
+import { googlePlacesApi, PlaceResult } from '../../services/api/googlePlacesApi';
 import { parkingSensorsApi } from '../../services/api/parkingSensorsApi';
 import FavoritesService, { favoritesService } from '../../services/database/favoritesService';
 import { loggingService } from '../../services/database/loggingService';
@@ -74,6 +75,12 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
   const [showNameModal, setShowNameModal] = useState(false);
   const [pendingFavorite, setPendingFavorite] = useState<EnhancedParkingSensorMarker | null>(null);
+
+  // POI search state
+  const [poiResults, setPOIResults] = useState<PlaceResult[]>([]);
+  const [selectedPOI, setSelectedPOI] = useState<PlaceResult | null>(null);
+  const [isSearchingPOI, setIsSearchingPOI] = useState(false);
+  const [searchType, setSearchType] = useState<'parking' | 'poi' | 'mixed'>('parking');
   const [isListening, setIsListening] = useState(false);
   const [speechSupported, setSpeechSupported] = useState(false);
   const recognitionRef = useRef<any>(null);
@@ -418,6 +425,71 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
     }
   }, []);
 
+  // POI search functionality
+  const searchPOI = useCallback(async (query: string) => {
+    console.log('searchPOI called with query:', query);
+
+    if (!query.trim()) {
+      setPOIResults([]);
+      setSearchType('parking');
+      return;
+    }
+
+    // Check if this looks like a POI search
+    const isPOI = googlePlacesApi.isPOISearch(query);
+    console.log('isPOI result:', isPOI);
+
+    if (!isPOI) {
+      setPOIResults([]);
+      setSearchType('parking');
+      return;
+    }
+
+    console.log('Starting POI search...');
+    setIsSearchingPOI(true);
+    setSearchType('poi');
+
+    // Send POI search request to map iframe
+    const iframe = document.querySelector('iframe[title="Melbourne Parking Sensors Map"]') as HTMLIFrameElement;
+    if (iframe && iframe.contentWindow) {
+      const searchParams = {
+        query: query,
+        location: userLocation &&
+                  typeof userLocation.latitude === 'number' &&
+                  typeof userLocation.longitude === 'number' ? {
+          lat: userLocation.latitude,
+          lng: userLocation.longitude
+        } : undefined,
+        radius: 10000, // 10km radius
+      };
+
+      console.log('Sending POI search request to iframe:', searchParams);
+      iframe.contentWindow.postMessage({
+        type: 'SEARCH_POI',
+        query: searchParams.query,
+        location: searchParams.location,
+        radius: searchParams.radius
+      }, '*');
+    } else {
+      console.error('Map iframe not found');
+      setIsSearchingPOI(false);
+      setPOIResults([]);
+      setSearchType('parking');
+    }
+  }, [userLocation]);
+
+  // Enhanced search query handler
+  const handleSearchQueryChange = useCallback((query: string) => {
+    setSearchQuery(query);
+
+    // Debounce POI search
+    const timeoutId = setTimeout(() => {
+      searchPOI(query);
+    }, 500);
+
+    return () => clearTimeout(timeoutId);
+  }, [searchPOI]);
+
   // Speech recognition functionality
   const toggleSpeechRecognition = useCallback(() => {
     if (Platform.OS !== 'web' || !speechSupported) {
@@ -449,7 +521,7 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
       console.log('Speech recognition result:', event);
       const transcript = event.results[0][0].transcript;
       console.log('Transcript:', transcript);
-      setSearchQuery(transcript.trim());
+      handleSearchQueryChange(transcript.trim());
     };
 
     recognition.onerror = (event: any) => {
@@ -628,45 +700,95 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
 
 
 
-  // Filter and sort markers with memoization
+  // Convert POI results to marker-like objects for list display
+  const poiAsMarkers = useMemo(() => {
+    return poiResults.map(poi => ({
+      id: `poi_${poi.place_id}`,
+      coordinate: {
+        latitude: poi.geometry.location.lat,
+        longitude: poi.geometry.location.lng
+      },
+      title: poi.name,
+      description: poi.formatted_address,
+      streetAddress: poi.formatted_address,
+      isOccupied: false,
+      isRestricted: false,
+      currentRestriction: `Rating: ${poi.rating || 'N/A'} | ${poi.types.join(', ')}`,
+      lastUpdated: new Date(),
+      zoneNumber: 'POI',
+      kerbsideId: 'POI',
+      restrictions: [],
+      streetSegment: undefined,
+      distance: userLocation &&
+                userLocation.coords &&
+                typeof userLocation.coords.latitude === 'number' &&
+                typeof userLocation.coords.longitude === 'number' ? calculateDistance(
+        { latitude: userLocation.coords.latitude, longitude: userLocation.coords.longitude },
+        { latitude: poi.geometry.location.lat, longitude: poi.geometry.location.lng }
+      ) : null,
+      drivingTime: null,
+      type: 'poi' as const,
+      rating: poi.rating,
+      types: poi.types,
+      business_status: poi.business_status
+    }));
+  }, [poiResults, userLocation]);
+
+  // Filter and sort markers with memoization (including POI results)
   const filteredAndSortedMarkers = useMemo(() => {
-    // Use markersWithDistances which already have distance calculations
+    // Start with parking markers
     let filteredMarkers = markersWithDistances.filter(marker =>
       marker.streetAddress && // Must have address
       marker.streetAddress !== 'Address not available' && // Exclude "Address not available"
       !marker.streetAddress.includes('Address not available') // Extra safety check
     );
 
-    // Apply search filter
+    // Add POI markers to the list when search type includes POI
+    if (searchType === 'poi' || searchType === 'mixed') {
+      filteredMarkers = [...filteredMarkers, ...poiAsMarkers];
+    }
+
+    // Apply search filter (only to parking markers, POI markers bypass all filtering)
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase().trim();
       const beforeSearchCount = filteredMarkers.length;
       filteredMarkers = filteredMarkers.filter(marker => {
-        const streetName = (marker.streetAddress || '').toLowerCase();
-        const zoneNumber = (marker.title || '').toLowerCase();
-        const description = (marker.description || '').toLowerCase();
+        const isPOI = (marker as any).type === 'poi';
 
-        // Simple search - check if query is contained in any of these fields
-        const matches = streetName.includes(query) ||
-                       zoneNumber.includes(query) ||
-                       description.includes(query);
+        if (isPOI) {
+          // POI markers always pass through - no filtering
+          return true;
+        } else {
+          // For parking markers, use original logic
+          const streetName = (marker.streetAddress || '').toLowerCase();
+          const zoneNumber = (marker.title || '').toLowerCase();
+          const description = (marker.description || '').toLowerCase();
 
-        if (matches) {
-          console.log(`Match found: ${marker.title} - ${marker.streetAddress}`);
+          const matches = streetName.includes(query) ||
+                         zoneNumber.includes(query) ||
+                         description.includes(query);
+
+          if (matches) {
+            console.log(`Parking Match found: ${marker.title} - ${marker.streetAddress}`);
+          }
+
+          return matches;
         }
-
-        return matches;
       });
       console.log(`Search for "${query}": ${beforeSearchCount} -> ${filteredMarkers.length} results`);
     }
 
-    // Apply basic restriction filter
+    // Apply basic restriction filter (only to parking markers, not POI)
     switch (filterType) {
       case 'unrestricted':
-        filteredMarkers = filteredMarkers.filter(marker => !marker.isRestricted);
+        filteredMarkers = filteredMarkers.filter(marker =>
+          (marker as any).type === 'poi' || !marker.isRestricted
+        );
         break;
       case 'restricted':
-        filteredMarkers = filteredMarkers.filter(marker => marker.isRestricted);
+        filteredMarkers = filteredMarkers.filter(marker =>
+          (marker as any).type === 'poi' || marker.isRestricted
+        );
         break;
       case 'all':
       default:
@@ -674,9 +796,12 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
         break;
     }
 
-    // Apply sign type filter
+    // Apply sign type filter (only to parking markers, not POI)
     if (signTypeFilter !== 'all') {
       filteredMarkers = filteredMarkers.filter(marker => {
+        // Skip filtering for POI markers
+        if ((marker as any).type === 'poi') return true;
+
         const restrictionDetails = parseRestrictionDetails(marker);
         if (!restrictionDetails.signType) return signTypeFilter === 'other';
 
@@ -697,9 +822,12 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
       });
     }
 
-    // Apply hours filter
+    // Apply hours filter (only to parking markers, not POI)
     if (hoursFilter !== 'all') {
       filteredMarkers = filteredMarkers.filter(marker => {
+        // Skip filtering for POI markers
+        if ((marker as any).type === 'poi') return true;
+
         const restrictionDetails = parseRestrictionDetails(marker);
         if (!restrictionDetails.timeRange) return false;
 
@@ -773,7 +901,7 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
 
     console.log(`Final filtered results: ${filteredMarkers.length} markers`);
     return filteredMarkers;
-  }, [markersWithDistances, searchQuery, filterType, signTypeFilter, hoursFilter, sortType, userLocation]);
+  }, [markersWithDistances, poiAsMarkers, searchType, searchQuery, filterType, signTypeFilter, hoursFilter, sortType, userLocation]);
 
   // Calculate bounds and center for all markers
   const calculateMarkersBounds = useCallback((markers: EnhancedParkingSensorMarker[]) => {
@@ -818,9 +946,32 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
       isOccupied: marker.isOccupied,
       restriction: marker.currentRestriction || 'No restriction data',
       isRestricted: marker.isRestricted || false,
-      streetAddress: marker.streetAddress || 'Address not available'
+      streetAddress: marker.streetAddress || 'Address not available',
+      type: 'parking'
       // Removed isSelected to prevent map re-rendering on selection
     }));
+
+    // Add POI markers
+    const poiMarkersData = poiResults.map(poi => ({
+      id: `poi_${poi.place_id}`,
+      lat: poi.geometry.location.lat,
+      lng: poi.geometry.location.lng,
+      title: poi.name,
+      description: poi.formatted_address,
+      color: '#9b59b6', // Purple for POIs
+      isOccupied: false,
+      restriction: `Rating: ${poi.rating || 'N/A'} | ${poi.types.join(', ')}`,
+      isRestricted: false,
+      streetAddress: poi.formatted_address,
+      type: 'poi',
+      rating: poi.rating,
+      types: poi.types,
+      business_status: poi.business_status,
+      opening_hours: poi.opening_hours
+    }));
+
+    // Combine parking and POI markers
+    const allMarkersData = [...markersData, ...poiMarkersData];
 
     // Define map styles based on theme
     const isDarkMode = colorScheme === 'dark';
@@ -1007,6 +1158,10 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
             background: #f8d7da;
             color: #721c24;
           }
+          .status-poi {
+            background: #e8f5e8;
+            color: #2d5a2d;
+          }
           .info-row {
             display: flex;
             justify-content: space-between;
@@ -1053,6 +1208,28 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
             text-align: center;
             margin-top: 4px;
           }
+          .poi-actions {
+            display: flex;
+            gap: 8px;
+            margin: 12px 0 8px 0;
+          }
+          .save-btn {
+            flex: 1;
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            text-decoration: none;
+            text-align: center;
+            transition: background-color 0.2s;
+          }
+          .save-btn:hover {
+            background: #218838;
+          }
 
           /* Pulse animation for user location */
           @keyframes pulse {
@@ -1090,7 +1267,7 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
           let userLocationMarker = null;
           let userLocationCircle = null; // Fix: Add missing variable
           let parkingMarkers = [];
-          const markersData = ${JSON.stringify(markersData)};
+          const markersData = ${JSON.stringify(allMarkersData)};
           const userLocationData = ${JSON.stringify(userLocationData)};
           const markersBounds = ${JSON.stringify(markersBounds)};
 
@@ -1141,16 +1318,27 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
             console.log('Map created successfully');
             document.getElementById('status').textContent = 'Adding markers...';
 
-            // Add parking markers
+            // Add markers (parking and POI)
             markersData.forEach(markerData => {
-              // Create GPS checkpoint marker
-              const gpsCheckpointPath = 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z';
+              let markerIcon;
 
-              const marker = new google.maps.Marker({
-                position: { lat: markerData.lat, lng: markerData.lng },
-                map: map,
-                title: markerData.title,
-                icon: {
+              if (markerData.type === 'poi') {
+                // POI marker - restaurant/cafe icon
+                const poiPath = 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z';
+                markerIcon = {
+                  path: poiPath,
+                  fillColor: markerData.color,
+                  fillOpacity: 0.8,
+                  strokeColor: '#ffffff',
+                  strokeWeight: 2,
+                  strokeOpacity: 1,
+                  scale: 1.3,
+                  anchor: new google.maps.Point(12, 22)
+                };
+              } else {
+                // Parking marker - GPS checkpoint icon
+                const gpsCheckpointPath = 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z';
+                markerIcon = {
                   path: gpsCheckpointPath,
                   fillColor: markerData.color,
                   fillOpacity: 0.7,
@@ -1159,46 +1347,106 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
                   strokeOpacity: 0.8,
                   scale: 1.1,
                   anchor: new google.maps.Point(12, 22)
-                }
+                };
+              }
+
+              const marker = new google.maps.Marker({
+                position: { lat: markerData.lat, lng: markerData.lng },
+                map: map,
+                title: markerData.title,
+                icon: markerIcon
               });
 
               // Store marker ID for selection
               marker.set('markerId', markerData.id);
 
-              // Create info window content
+              // Create info window content based on marker type
               const googleMapsUrl = 'https://www.google.com/maps/dir/?api=1&destination=' + markerData.lat + ',' + markerData.lng;
-              const infoContent = \`
-                <div class="custom-info-window">
-                  <div class="popup-header">
-                    <h4 class="popup-title">
-                      <span>🅿️</span>
-                      <span>\${markerData.title}</span>
-                    </h4>
+
+              let infoContent;
+              if (markerData.type === 'poi') {
+                // POI info window
+                const ratingStars = markerData.rating ? '⭐'.repeat(Math.round(markerData.rating)) : '';
+                const statusText = markerData.business_status === 'OPERATIONAL' ? '🟢 Open' :
+                                 markerData.business_status === 'CLOSED_TEMPORARILY' ? '🟡 Temporarily Closed' :
+                                 markerData.business_status === 'CLOSED_PERMANENTLY' ? '🔴 Permanently Closed' : '';
+
+                infoContent = \`
+                  <div class="custom-info-window">
+                    <div class="popup-header">
+                      <h4 class="popup-title">
+                        <span>📍</span>
+                        <span>\${markerData.title}</span>
+                      </h4>
+                    </div>
+                    <div class="popup-content">
+                      \${statusText ? \`<div class="status-badge status-poi">\${statusText}</div>\` : ''}
+
+                      \${markerData.rating ? \`
+                        <div class="info-row">
+                          <div class="info-label">Rating</div>
+                          <div class="info-text">\${ratingStars} \${markerData.rating}/5</div>
+                        </div>
+                      \` : ''}
+
+                      <div class="info-row">
+                        <div class="info-label">Address</div>
+                        <div class="info-text">\${markerData.streetAddress}</div>
+                      </div>
+
+                      <div class="info-row">
+                        <div class="info-label">Type</div>
+                        <div class="info-text">\${markerData.types.slice(0, 2).join(', ')}</div>
+                      </div>
+
+                      <div class="poi-actions">
+                        <a href="\${googleMapsUrl}" target="_blank" rel="noopener noreferrer" class="directions-btn">
+                          🧭 Directions
+                        </a>
+                        <button onclick="savePOI('\${markerData.id}', '\${markerData.title}', \${markerData.lat}, \${markerData.lng})" class="save-btn">
+                          🔖 Save
+                        </button>
+                      </div>
+
+                      <div class="last-updated">Found via Google Places</div>
+                    </div>
                   </div>
-                  <div class="popup-content">
-                    <div class="status-badge \${markerData.isOccupied ? 'status-occupied' : 'status-available'}">
-                      <span>\${markerData.isOccupied ? '❌' : '✅'}</span>
-                      <span>\${markerData.isOccupied ? 'Occupied' : 'Available'}</span>
+                \`;
+              } else {
+                // Parking info window
+                infoContent = \`
+                  <div class="custom-info-window">
+                    <div class="popup-header">
+                      <h4 class="popup-title">
+                        <span>🅿️</span>
+                        <span>\${markerData.title}</span>
+                      </h4>
                     </div>
+                    <div class="popup-content">
+                      <div class="status-badge \${markerData.isOccupied ? 'status-occupied' : 'status-available'}">
+                        <span>\${markerData.isOccupied ? '❌' : '✅'}</span>
+                        <span>\${markerData.isOccupied ? 'Occupied' : 'Available'}</span>
+                      </div>
 
-                    <div class="info-row">
-                      <div class="info-label">Location</div>
-                      <div class="info-text">\${markerData.streetAddress}</div>
+                      <div class="info-row">
+                        <div class="info-label">Location</div>
+                        <div class="info-text">\${markerData.streetAddress}</div>
+                      </div>
+
+                      <div class="info-row">
+                        <div class="info-label">Rules</div>
+                        <div class="info-text">\${markerData.restriction.replace(/Location:.*?\\\\n/g, '').replace(/Status:.*?\\\\n/g, '').replace(/Last updated:.*$/g, '').trim()}</div>
+                      </div>
+
+                      <a href="\${googleMapsUrl}" target="_blank" rel="noopener noreferrer" class="directions-btn">
+                        🧭 Directions
+                      </a>
+
+                      <div class="last-updated">\${new Date().toLocaleTimeString()}</div>
                     </div>
-
-                    <div class="info-row">
-                      <div class="info-label">Rules</div>
-                      <div class="info-text">\${markerData.restriction.replace(/Location:.*?\\n/g, '').replace(/Status:.*?\\n/g, '').replace(/Last updated:.*$/g, '').trim()}</div>
-                    </div>
-
-                    <a href="\${googleMapsUrl}" target="_blank" rel="noopener noreferrer" class="directions-btn">
-                      🧭 Directions
-                    </a>
-
-                    <div class="last-updated">\${new Date().toLocaleTimeString()}</div>
                   </div>
-                </div>
-              \`;
+                \`;
+              }
 
               // Add click listener
               marker.addListener('click', () => {
@@ -1383,7 +1631,7 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
             }
           }
 
-          // Listen for marker selection messages from parent
+          // Listen for messages from parent
           window.addEventListener('message', function(event) {
             if (event.data.type === 'SELECT_MARKER' && map && parkingMarkers.length > 0) {
               const { markerId, lat, lng } = event.data;
@@ -1473,6 +1721,10 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
                   }
                 }, infoWindowDelay); // Wait for animation to complete
               }
+            } else if (event.data.type === 'SEARCH_POI') {
+              // Handle POI search requests from parent
+              const { query, location, radius } = event.data;
+              searchPOIInMap(query, location, radius);
             }
           });
 
@@ -1482,14 +1734,113 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
             document.getElementById('status').textContent = '❌ API key authentication failed';
           };
 
+          // Function to save POI as favorite
+          function savePOI(poiId, name, lat, lng) {
+            // Send message to parent to save POI
+            window.parent.postMessage({
+              type: 'SAVE_POI',
+              poiId: poiId,
+              name: name,
+              lat: lat,
+              lng: lng
+            }, '*');
+          }
+
+          // Function to search for POI using Google Places API
+          function searchPOIInMap(query, location, radius) {
+            console.log('searchPOIInMap called with:', query, location, radius);
+
+            if (!window.google || !window.google.maps || !window.google.maps.places) {
+              console.error('Google Maps or Places API not available');
+              window.parent.postMessage({
+                type: 'POI_SEARCH_RESULT',
+                results: [],
+                status: 'ERROR',
+                error_message: 'Google Maps or Places API not available'
+              }, '*');
+              return;
+            }
+
+            try {
+              // Create a PlacesService instance
+              const service = new window.google.maps.places.PlacesService(map);
+
+              // Prepare the request
+              const request = {
+                query: query,
+                fields: ['place_id', 'name', 'formatted_address', 'geometry', 'types', 'rating', 'price_level', 'opening_hours', 'photos', 'business_status']
+              };
+
+              if (location) {
+                request.location = new window.google.maps.LatLng(location.lat, location.lng);
+                request.radius = radius || 10000;
+              }
+
+              // Perform the search
+              service.textSearch(request, function(results, status) {
+                console.log('POI search completed with status:', status, 'results:', results?.length);
+
+                if (status === window.google.maps.places.PlacesServiceStatus.OK && results) {
+                  // Convert results to our format
+                  const convertedResults = results.map(function(place) {
+                    return {
+                      place_id: place.place_id,
+                      name: place.name,
+                      formatted_address: place.formatted_address,
+                      geometry: {
+                        location: {
+                          lat: place.geometry.location.lat(),
+                          lng: place.geometry.location.lng()
+                        }
+                      },
+                      types: place.types || [],
+                      rating: place.rating,
+                      price_level: place.price_level,
+                      opening_hours: place.opening_hours ? {
+                        open_now: place.opening_hours.open_now
+                      } : undefined,
+                      business_status: place.business_status
+                    };
+                  });
+
+                  // Send results back to parent
+                  window.parent.postMessage({
+                    type: 'POI_SEARCH_RESULT',
+                    results: convertedResults,
+                    status: 'OK'
+                  }, '*');
+                } else {
+                  console.warn('POI search failed with status:', status);
+                  window.parent.postMessage({
+                    type: 'POI_SEARCH_RESULT',
+                    results: [],
+                    status: 'ZERO_RESULTS',
+                    error_message: 'No results found'
+                  }, '*');
+                }
+              });
+
+            } catch (error) {
+              console.error('POI search error:', error);
+              window.parent.postMessage({
+                type: 'POI_SEARCH_RESULT',
+                results: [],
+                status: 'ERROR',
+                error_message: error.message || 'Unknown error'
+              }, '*');
+            }
+          }
+
           // Make functions globally available
           window.initMap = initMap;
           window.centerOnUserLocation = centerOnUserLocation;
+          window.savePOI = savePOI;
+          window.searchPOIInMap = searchPOIInMap;
         </script>
 
-        <!-- Google Maps JavaScript API - With Your New API Key -->
+        <!-- Google Maps JavaScript API with Places Library -->
         <script
-          src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCMRDPXKYVQU8n3n0LK3ipTRhtAxXWky1I&callback=initMap&v=weekly&loading=async"
+          src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCMRDPXKYVQU8n3n0LK3ipTRhtAxXWky1I&libraries=places&callback=initMap&v=weekly&loading=async"
           async
           defer
         ></script>
@@ -1526,14 +1877,14 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
       </body>
       </html>
     `;
-  }, [markersWithDistances, userLocation, calculateMarkersBounds, colorScheme]);
+  }, [markersWithDistances, poiResults, userLocation, calculateMarkersBounds, colorScheme]);
 
   // Generate map HTML when markers change (but not when selection changes)
   useEffect(() => {
-    if (markersWithDistances.length > 0) {
+    if (markersWithDistances.length > 0 || poiResults.length > 0) {
       setMapHtml(generateMapHTML());
     }
-  }, [markersWithDistances, generateMapHTML]);
+  }, [markersWithDistances, poiResults, generateMapHTML]);
 
   // Handle marker selection with smooth animation (without re-rendering map)
   useEffect(() => {
@@ -1550,6 +1901,58 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
       }
     }
   }, [selectedMarker, mapHtml]);
+
+  // Handle messages from map iframe
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data.type === 'SAVE_POI') {
+        const { poiId, name, lat, lng } = event.data;
+        // Save POI as favorite
+        savePOIAsFavorite(poiId, name, lat, lng);
+      } else if (event.data.type === 'POI_SEARCH_RESULT') {
+        const { results, status, error_message } = event.data;
+        console.log('Received POI search results:', results?.length, 'status:', status);
+
+        setIsSearchingPOI(false);
+
+        if (status === 'OK' && results) {
+          setPOIResults(results);
+          setSearchType(results.length > 0 ? 'mixed' : 'parking');
+          console.log(`Found ${results.length} POI results`);
+        } else {
+          console.warn('POI search failed:', status, error_message);
+          setPOIResults([]);
+          setSearchType('parking');
+        }
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
+  // Function to save POI as favorite
+  const savePOIAsFavorite = async (poiId: string, name: string, lat: number, lng: number) => {
+    try {
+      // Create a favorite entry for the POI
+      await favoritesService.addFavorite({
+        id: poiId,
+        customName: name,
+        latitude: lat,
+        longitude: lng,
+        streetAddress: name, // Use name as address for POIs
+        title: name,
+        restriction: 'Point of Interest', // Use restriction instead of currentRestriction
+        isOccupied: false,
+        zoneNumber: 'POI'
+      });
+
+      Alert.alert('Saved!', `${name} has been saved to your favorites.`);
+    } catch (error) {
+      console.error('Error saving POI:', error);
+      Alert.alert('Error', 'Failed to save location. Please try again.');
+    }
+  };
 
   if (loading && markers.length === 0) {
     return (
@@ -1634,8 +2037,16 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
             {searchQuery.trim() && (
               <View style={styles.searchResultsBanner}>
                 <Text style={styles.searchResultsText}>
-                  🔍 Showing results for "{searchQuery}"
+                  {searchType === 'poi' ? '📍' : searchType === 'mixed' ? '🔍📍' : '🔍'}
+                  {searchType === 'poi' ? ` Found places for "${searchQuery}"` :
+                   searchType === 'mixed' ? ` Showing parking & places for "${searchQuery}"` :
+                   ` Showing parking results for "${searchQuery}"`}
                 </Text>
+                {isSearchingPOI && (
+                  <Text style={styles.searchLoadingText}>
+                    🔄 Searching places...
+                  </Text>
+                )}
               </View>
             )}
           </View>
@@ -1656,17 +2067,21 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
               <Text style={styles.searchIcon}>🔍</Text>
               <TextInput
                 style={styles.searchInput}
-                placeholder="Search by street name, zone, or location..."
+                placeholder="Search parking spots, restaurants, cafes, shops..."
                 placeholderTextColor={colors.placeholder}
                 value={searchQuery}
-                onChangeText={setSearchQuery}
+                onChangeText={handleSearchQueryChange}
                 autoCapitalize="words"
                 autoCorrect={false}
               />
               {searchQuery.length > 0 && (
                 <TouchableOpacity
                   style={styles.clearSearchButton}
-                  onPress={() => setSearchQuery('')}
+                  onPress={() => {
+                    setSearchQuery('');
+                    setPOIResults([]);
+                    setSearchType('parking');
+                  }}
                 >
                   <Text style={styles.clearSearchText}>✕</Text>
                 </TouchableOpacity>
@@ -1770,6 +2185,8 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
                   setHoursFilter('all');
                   setSortType('availability');
                   setSearchQuery('');
+                  setPOIResults([]);
+                  setSearchType('parking');
                   closeAllDropdowns();
                 }}
               >
@@ -1787,27 +2204,34 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
             {(() => {
               console.log(`Rendering ${filteredAndSortedMarkers.length} markers in list`);
               return filteredAndSortedMarkers;
-            })().map((marker, index) => {
+            })().map((marker) => {
               const restrictionDetails = parseRestrictionDetails(marker);
+              const isPOI = (marker as any).type === 'poi';
 
               return (
                 <TouchableOpacity
                   key={marker.id}
                   style={[
                     styles.parkingSpot,
+                    isPOI && styles.poiSpot,
                     selectedMarker?.id === marker.id && styles.parkingSpotSelected
                   ]}
                   activeOpacity={0.8}
                   onPress={() => handleParkingSpotSelect(marker)}
                 >
-                  {/* Main Street Name - Most Prominent */}
+                  {/* Main Street Name or POI Name - Most Prominent */}
                   <View style={styles.streetHeader}>
                     <View style={styles.streetNameContainer}>
                       <Text style={styles.streetName}>
-                        {marker.streetAddress ?
-                          marker.streetAddress.split(' (')[0] : // Extract just the street name
-                          `Zone ${marker.zoneNumber}`
-                        }
+                        {isPOI ? (
+                          <>
+                            📍 {marker.title}
+                          </>
+                        ) : (
+                          marker.streetAddress ?
+                            marker.streetAddress.split(' (')[0] : // Extract just the street name
+                            `Zone ${marker.zoneNumber}`
+                        )}
                       </Text>
                       {/* Distance and Driving Time */}
                       {marker.distanceFromUser !== undefined && (
@@ -1827,14 +2251,22 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
                     </View>
                     <View style={styles.headerRight}>
                       <View style={styles.topRightRow}>
-                        <View style={[
-                          styles.statusBadge,
-                          marker.isOccupied ? styles.occupiedBadge : styles.availableBadge
-                        ]}>
-                          <Text style={styles.statusLabel}>
-                            {marker.isOccupied ? 'NOT AVAILABLE' : 'AVAILABLE'}
-                          </Text>
-                        </View>
+                        {isPOI ? (
+                          <View style={[styles.statusBadge, styles.poiBadge]}>
+                            <Text style={styles.statusLabel}>
+                              {(marker as any).rating ? `⭐ ${(marker as any).rating}/5` : 'PLACE'}
+                            </Text>
+                          </View>
+                        ) : (
+                          <View style={[
+                            styles.statusBadge,
+                            marker.isOccupied ? styles.occupiedBadge : styles.availableBadge
+                          ]}>
+                            <Text style={styles.statusLabel}>
+                              {marker.isOccupied ? 'NOT AVAILABLE' : 'AVAILABLE'}
+                            </Text>
+                          </View>
+                        )}
                         <TouchableOpacity
                           style={styles.bookmarkButton}
                           onPress={() => toggleSaved(marker)}
@@ -1853,31 +2285,42 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
                     </View>
                   </View>
 
-                  {/* Sign Type and Time Information */}
+                  {/* Sign Type and Time Information OR POI Details */}
                   <View style={styles.restrictionSection}>
-                    {restrictionDetails.signType ? (
-                      <View style={styles.signInfoContainer}>
-                        {/* All restriction info evenly distributed */}
-                        <View style={styles.restrictionRow}>
-                          <View style={styles.signTypeBadge}>
-                            <Text style={styles.signTypeText}>{restrictionDetails.signType}</Text>
-                          </View>
-
-                          <View style={styles.timeSection}>
-                            <Text style={styles.timeContext}>Hours</Text>
-                            <Text style={styles.timeValue}>{restrictionDetails.timeRange}</Text>
-                          </View>
-
-                          {restrictionDetails.days && (
-                            <View style={styles.daysSection}>
-                              <Text style={styles.daysContext}>Days</Text>
-                              <Text style={styles.daysValue}>{restrictionDetails.days}</Text>
-                            </View>
-                          )}
-                        </View>
+                    {isPOI ? (
+                      <View style={styles.poiInfoContainer}>
+                        <Text style={styles.poiAddress}>📍 {marker.streetAddress}</Text>
+                        {(marker as any).types && (marker as any).types.length > 0 && (
+                          <Text style={styles.poiTypes}>
+                            🏷️ {(marker as any).types.slice(0, 3).join(', ')}
+                          </Text>
+                        )}
                       </View>
                     ) : (
-                      <Text style={styles.noRestrictionText}>ℹ️ CHECK LOCAL SIGNS FOR DETAILS</Text>
+                      restrictionDetails.signType ? (
+                        <View style={styles.signInfoContainer}>
+                          {/* All restriction info evenly distributed */}
+                          <View style={styles.restrictionRow}>
+                            <View style={styles.signTypeBadge}>
+                              <Text style={styles.signTypeText}>{restrictionDetails.signType}</Text>
+                            </View>
+
+                            <View style={styles.timeSection}>
+                              <Text style={styles.timeContext}>Hours</Text>
+                              <Text style={styles.timeValue}>{restrictionDetails.timeRange}</Text>
+                            </View>
+
+                            {restrictionDetails.days && (
+                              <View style={styles.daysSection}>
+                                <Text style={styles.daysContext}>Days</Text>
+                                <Text style={styles.daysValue}>{restrictionDetails.days}</Text>
+                              </View>
+                            )}
+                          </View>
+                        </View>
+                      ) : (
+                        <Text style={styles.noRestrictionText}>ℹ️ CHECK LOCAL SIGNS FOR DETAILS</Text>
+                      )
                     )}
                   </View>
 
@@ -2289,10 +2732,6 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
   micBaseActive: {
     backgroundColor: '#fff',
   },
-  clearSearchButton: {
-    padding: 4,
-    marginLeft: 8,
-  },
   clearSearchText: {
     fontSize: 16,
     color: '#95a5a6',
@@ -2316,19 +2755,6 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
     borderRadius: 4,
     backgroundColor: '#fff',
     marginRight: 8,
-  },
-  listeningText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  listeningIndicator: {
-    backgroundColor: '#e74c3c',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginTop: 8,
-    alignItems: 'center',
   },
   listeningText: {
     color: '#fff',
@@ -2535,6 +2961,13 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
   },
+  searchLoadingText: {
+    fontSize: 11,
+    color: colors.placeholder,
+    fontStyle: 'italic',
+    marginTop: 4,
+    textAlign: 'center',
+  },
   parkingSpot: {
     backgroundColor: colors.cardBackground,
     borderRadius: 8,
@@ -2558,6 +2991,10 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
     backgroundColor: colors.backgroundSecondary,
     shadowColor: colors.error,
     shadowOpacity: 0.2,
+  },
+  poiSpot: {
+    borderLeftColor: '#9b59b6', // Purple for POI
+    backgroundColor: colors.cardBackground,
   },
   streetHeader: {
     flexDirection: 'row',
@@ -2651,6 +3088,10 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
     backgroundColor: colors.occupied,
     shadowColor: colors.occupied,
   },
+  poiBadge: {
+    backgroundColor: '#9b59b6', // Purple for POI
+    shadowColor: '#9b59b6',
+  },
   statusLabel: {
     color: colors.buttonText,
     fontSize: 10,
@@ -2672,6 +3113,24 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
     paddingVertical: 8,
     borderLeftWidth: 3,
     borderLeftColor: colors.info,
+  },
+  poiInfoContainer: {
+    backgroundColor: colors.backgroundSecondary,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: '#9b59b6', // Purple for POI
+  },
+  poiAddress: {
+    fontSize: 12,
+    color: colors.text,
+    marginBottom: 4,
+  },
+  poiTypes: {
+    fontSize: 11,
+    color: colors.placeholder,
+    fontStyle: 'italic',
   },
   restrictionRow: {
     flexDirection: 'row',

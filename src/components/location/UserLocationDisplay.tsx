@@ -41,7 +41,9 @@ export const UserLocationDisplay: React.FC<UserLocationDisplayProps> = ({
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        // Handle CORS or other HTTP errors gracefully
+        console.warn(`Nominatim API failed: HTTP ${response.status}: ${response.statusText}`);
+        throw new Error(`Reverse geocoding failed: ${response.status}`);
       }
 
       const data = await response.json();
