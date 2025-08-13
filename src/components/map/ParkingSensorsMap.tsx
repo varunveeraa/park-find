@@ -1208,27 +1208,164 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
             text-align: center;
             margin-top: 4px;
           }
+          /* Professional POI Info Window Styles */
+          .poi-info-window {
+            min-width: 340px;
+            max-width: 400px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+          }
+          .poi-header {
+            padding: 20px 0 16px 0;
+            border-bottom: 1px solid #e8e8e8;
+          }
+          .poi-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #1a1a1a;
+            margin: 0 0 8px 0;
+            line-height: 1.3;
+            letter-spacing: -0.01em;
+          }
+          .poi-subtitle {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            font-size: 14px;
+          }
+          .rating {
+            color: #666;
+            font-weight: 500;
+          }
+          .status {
+            color: #28a745;
+            font-weight: 500;
+            text-transform: capitalize;
+          }
+          .poi-info {
+            padding: 16px 0;
+            border-bottom: 1px solid #e8e8e8;
+          }
+          .info-item {
+            display: flex;
+            margin-bottom: 12px;
+          }
+          .info-item:last-child {
+            margin-bottom: 0;
+          }
+          .label {
+            font-size: 13px;
+            color: #666;
+            font-weight: 500;
+            width: 80px;
+            flex-shrink: 0;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+          }
+          .value {
+            font-size: 14px;
+            color: #333;
+            line-height: 1.4;
+          }
           .poi-actions {
             display: flex;
-            gap: 8px;
-            margin: 12px 0 8px 0;
+            gap: 12px;
+            margin: 20px 0 8px 0;
           }
-          .save-btn {
+          .btn {
             flex: 1;
-            background: #28a745;
-            color: white;
-            border: none;
-            padding: 8px 12px;
-            border-radius: 4px;
-            font-size: 12px;
+            padding: 12px 16px;
+            border-radius: 6px;
+            font-size: 14px;
             font-weight: 500;
-            cursor: pointer;
             text-decoration: none;
+            border: none;
+            cursor: pointer;
+            transition: all 0.15s ease;
             text-align: center;
-            transition: background-color 0.2s;
+            letter-spacing: 0.01em;
           }
-          .save-btn:hover {
-            background: #218838;
+          .btn-primary {
+            background: #2c3e50;
+            color: white;
+          }
+          .btn-primary:hover {
+            background: #34495e;
+          }
+          .btn-secondary {
+            background: white;
+            color: #2c3e50;
+            border: 1px solid #d1d5db;
+          }
+          .btn-secondary:hover {
+            background: #f9fafb;
+            border-color: #9ca3af;
+          }
+
+          /* Professional Parking Section Styles */
+          .parking-section {
+            margin: 20px 0 0 0;
+            padding-top: 20px;
+            border-top: 1px solid #e8e8e8;
+          }
+          .section-heading {
+            font-size: 16px;
+            font-weight: 600;
+            color: #1a1a1a;
+            margin: 0 0 16px 0;
+            letter-spacing: -0.01em;
+          }
+          .parking-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+            background: #e8e8e8;
+            border-radius: 6px;
+            overflow: hidden;
+          }
+          .parking-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px;
+            background: white;
+            cursor: pointer;
+            transition: background-color 0.15s ease;
+          }
+          .parking-item:hover {
+            background: #f8f9fa;
+          }
+          .parking-details {
+            flex: 1;
+          }
+          .parking-name {
+            font-size: 14px;
+            font-weight: 500;
+            color: #1a1a1a;
+            margin-bottom: 4px;
+          }
+          .parking-address {
+            font-size: 13px;
+            color: #666;
+            line-height: 1.3;
+          }
+          .parking-distance {
+            font-size: 13px;
+            color: #2c3e50;
+            font-weight: 600;
+            background: #f1f5f9;
+            padding: 4px 8px;
+            border-radius: 4px;
+            min-width: 40px;
+            text-align: center;
+          }
+          .no-parking-available {
+            text-align: center;
+            padding: 24px 16px;
+            color: #666;
+            font-size: 14px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            border: 1px solid #e8e8e8;
           }
 
           /* Pulse animation for user location */
@@ -1365,50 +1502,95 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
 
               let infoContent;
               if (markerData.type === 'poi') {
-                // POI info window
+                // POI info window with nearby parking spots
                 const ratingStars = markerData.rating ? '⭐'.repeat(Math.round(markerData.rating)) : '';
                 const statusText = markerData.business_status === 'OPERATIONAL' ? '🟢 Open' :
                                  markerData.business_status === 'CLOSED_TEMPORARILY' ? '🟡 Temporarily Closed' :
                                  markerData.business_status === 'CLOSED_PERMANENTLY' ? '🔴 Permanently Closed' : '';
 
-                infoContent = \`
-                  <div class="custom-info-window">
-                    <div class="popup-header">
-                      <h4 class="popup-title">
-                        <span>📍</span>
-                        <span>\${markerData.title}</span>
-                      </h4>
-                    </div>
-                    <div class="popup-content">
-                      \${statusText ? \`<div class="status-badge status-poi">\${statusText}</div>\` : ''}
+                // Find nearby available parking spots with complete data (within 500m)
+                const nearbyParking = markersData
+                  .filter(m => {
+                    // Only include parking spots that are:
+                    // 1. Actually parking spots (not POI)
+                    // 2. Available (not occupied)
+                    // 3. Have complete data (title, address, coordinates)
+                    return m.type === 'parking' &&
+                           !m.isOccupied &&
+                           m.title &&
+                           m.title !== 'Zone null' &&
+                           m.streetAddress &&
+                           m.streetAddress !== 'Address not available' &&
+                           m.lat &&
+                           m.lng &&
+                           typeof m.lat === 'number' &&
+                           typeof m.lng === 'number';
+                  })
+                  .map(m => {
+                    const distance = Math.sqrt(
+                      Math.pow(m.lat - markerData.lat, 2) +
+                      Math.pow(m.lng - markerData.lng, 2)
+                    ) * 111000; // Rough conversion to meters
+                    return { ...m, distance };
+                  })
+                  .filter(m => m.distance <= 500) // Within 500m
+                  .sort((a, b) => a.distance - b.distance)
+                  .slice(0, 3); // Top 3 closest
 
-                      \${markerData.rating ? \`
-                        <div class="info-row">
-                          <div class="info-label">Rating</div>
-                          <div class="info-text">\${ratingStars} \${markerData.rating}/5</div>
+                const nearbyParkingHtml = nearbyParking.length > 0 ? \`
+                  <div class="parking-section">
+                    <h3 class="section-heading">Available Parking Nearby</h3>
+                    <div class="parking-grid">
+                      \${nearbyParking.map(parking => \`
+                        <div class="parking-item" onclick="selectParkingFromPOI('\${parking.id}')">
+                          <div class="parking-details">
+                            <div class="parking-name">\${parking.title}</div>
+                            <div class="parking-address">\${parking.streetAddress}</div>
+                          </div>
+                          <div class="parking-distance">\${Math.round(parking.distance)}m</div>
                         </div>
-                      \` : ''}
+                      \`).join('')}
+                    </div>
+                  </div>
+                \` : \`
+                  <div class="parking-section">
+                    <h3 class="section-heading">Available Parking Nearby</h3>
+                    <div class="no-parking-available">
+                      No parking spots available within 500 meters
+                    </div>
+                  </div>
+                \`;
 
-                      <div class="info-row">
-                        <div class="info-label">Address</div>
-                        <div class="info-text">\${markerData.streetAddress}</div>
+                infoContent = \`
+                  <div class="custom-info-window poi-info-window">
+                    <div class="poi-header">
+                      <h2 class="poi-title">\${markerData.title}</h2>
+                      <div class="poi-subtitle">
+                        \${markerData.rating ? \`<span class="rating">\${ratingStars} \${markerData.rating}</span>\` : ''}
+                        \${statusText ? \`<span class="status">\${statusText.replace(/🟢|🟡|🔴/g, '').trim()}</span>\` : ''}
                       </div>
+                    </div>
 
-                      <div class="info-row">
-                        <div class="info-label">Type</div>
-                        <div class="info-text">\${markerData.types.slice(0, 2).join(', ')}</div>
+                    <div class="poi-info">
+                      <div class="info-item">
+                        <span class="label">Address</span>
+                        <span class="value">\${markerData.streetAddress}</span>
                       </div>
-
-                      <div class="poi-actions">
-                        <a href="\${googleMapsUrl}" target="_blank" rel="noopener noreferrer" class="directions-btn">
-                          🧭 Directions
-                        </a>
-                        <button onclick="savePOI('\${markerData.id}', '\${markerData.title}', \${markerData.lat}, \${markerData.lng})" class="save-btn">
-                          🔖 Save
-                        </button>
+                      <div class="info-item">
+                        <span class="label">Category</span>
+                        <span class="value">\${markerData.types.slice(0, 2).join(', ')}</span>
                       </div>
+                    </div>
 
-                      <div class="last-updated">Found via Google Places</div>
+                    \${nearbyParkingHtml}
+
+                    <div class="poi-actions">
+                      <a href="\${googleMapsUrl}" target="_blank" rel="noopener noreferrer" class="btn btn-primary">
+                        Get Directions
+                      </a>
+                      <button onclick="savePOI('\${markerData.id}', '\${markerData.title}', \${markerData.lat}, \${markerData.lng})" class="btn btn-secondary">
+                        Save Location
+                      </button>
                     </div>
                   </div>
                 \`;
@@ -1683,38 +1865,137 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
                     const markerData = markersData.find(m => m.id === markerId);
                     if (markerData) {
                       const googleMapsUrl = 'https://www.google.com/maps/dir/?api=1&destination=' + markerData.lat + ',' + markerData.lng;
-                      const infoContent = \`
-                        <div class="custom-info-window">
-                          <div class="popup-header">
-                            <h4 class="popup-title">
-                              <span>🅿️</span>
-                              <span>\${markerData.title}</span>
-                            </h4>
+
+                      let infoContent;
+                      if (markerData.type === 'poi') {
+                        // POI info window with nearby parking (same as click handler)
+                        const ratingStars = markerData.rating ? '⭐'.repeat(Math.round(markerData.rating)) : '';
+                        const statusText = markerData.business_status === 'OPERATIONAL' ? '🟢 Open' :
+                                         markerData.business_status === 'CLOSED_TEMPORARILY' ? '🟡 Temporarily Closed' :
+                                         markerData.business_status === 'CLOSED_PERMANENTLY' ? '🔴 Permanently Closed' : '';
+
+                        // Find nearby available parking spots with complete data (within 500m)
+                        const nearbyParking = markersData
+                          .filter(m => {
+                            // Only include parking spots that are:
+                            // 1. Actually parking spots (not POI)
+                            // 2. Available (not occupied)
+                            // 3. Have complete data (title, address, coordinates)
+                            return m.type === 'parking' &&
+                                   !m.isOccupied &&
+                                   m.title &&
+                                   m.title !== 'Zone null' &&
+                                   m.streetAddress &&
+                                   m.streetAddress !== 'Address not available' &&
+                                   m.lat &&
+                                   m.lng &&
+                                   typeof m.lat === 'number' &&
+                                   typeof m.lng === 'number';
+                          })
+                          .map(m => {
+                            const distance = Math.sqrt(
+                              Math.pow(m.lat - markerData.lat, 2) +
+                              Math.pow(m.lng - markerData.lng, 2)
+                            ) * 111000; // Rough conversion to meters
+                            return { ...m, distance };
+                          })
+                          .filter(m => m.distance <= 500) // Within 500m
+                          .sort((a, b) => a.distance - b.distance)
+                          .slice(0, 3); // Top 3 closest
+
+                        const nearbyParkingHtml = nearbyParking.length > 0 ? \`
+                          <div class="parking-section">
+                            <h3 class="section-heading">Available Parking Nearby</h3>
+                            <div class="parking-grid">
+                              \${nearbyParking.map(parking => \`
+                                <div class="parking-item" onclick="selectParkingFromPOI('\${parking.id}')">
+                                  <div class="parking-details">
+                                    <div class="parking-name">\${parking.title}</div>
+                                    <div class="parking-address">\${parking.streetAddress}</div>
+                                  </div>
+                                  <div class="parking-distance">\${Math.round(parking.distance)}m</div>
+                                </div>
+                              \`).join('')}
+                            </div>
                           </div>
-                          <div class="popup-content">
-                            <div class="status-badge \${markerData.isOccupied ? 'status-occupied' : 'status-available'}">
-                              <span>\${markerData.isOccupied ? '❌' : '✅'}</span>
-                              <span>\${markerData.isOccupied ? 'Occupied' : 'Available'}</span>
+                        \` : \`
+                          <div class="parking-section">
+                            <h3 class="section-heading">Available Parking Nearby</h3>
+                            <div class="no-parking-available">
+                              No parking spots available within 500 meters
                             </div>
-
-                            <div class="info-row">
-                              <div class="info-label">Location</div>
-                              <div class="info-text">\${markerData.streetAddress}</div>
-                            </div>
-
-                            <div class="info-row">
-                              <div class="info-label">Rules</div>
-                              <div class="info-text">\${markerData.restriction.replace(/Location:.*?\\\\n/g, '').replace(/Status:.*?\\\\n/g, '').replace(/Last updated:.*$/g, '').trim()}</div>
-                            </div>
-
-                            <a href="\${googleMapsUrl}" target="_blank" rel="noopener noreferrer" class="directions-btn">
-                              🧭 Directions
-                            </a>
-
-                            <div class="last-updated">\${new Date().toLocaleTimeString()}</div>
                           </div>
-                        </div>
-                      \`;
+                        \`;
+
+                        infoContent = \`
+                          <div class="custom-info-window poi-info-window">
+                            <div class="poi-header">
+                              <h2 class="poi-title">\${markerData.title}</h2>
+                              <div class="poi-subtitle">
+                                \${markerData.rating ? \`<span class="rating">\${ratingStars} \${markerData.rating}</span>\` : ''}
+                                \${statusText ? \`<span class="status">\${statusText.replace(/🟢|🟡|🔴/g, '').trim()}</span>\` : ''}
+                              </div>
+                            </div>
+
+                            <div class="poi-info">
+                              <div class="info-item">
+                                <span class="label">Address</span>
+                                <span class="value">\${markerData.streetAddress}</span>
+                              </div>
+                              <div class="info-item">
+                                <span class="label">Category</span>
+                                <span class="value">\${markerData.types.slice(0, 2).join(', ')}</span>
+                              </div>
+                            </div>
+
+                            \${nearbyParkingHtml}
+
+                            <div class="poi-actions">
+                              <a href="\${googleMapsUrl}" target="_blank" rel="noopener noreferrer" class="btn btn-primary">
+                                Get Directions
+                              </a>
+                              <button onclick="savePOI('\${markerData.id}', '\${markerData.title}', \${markerData.lat}, \${markerData.lng})" class="btn btn-secondary">
+                                Save Location
+                              </button>
+                            </div>
+                          </div>
+                        \`;
+                      } else {
+                        // Parking info window
+                        infoContent = \`
+                          <div class="custom-info-window">
+                            <div class="popup-header">
+                              <h4 class="popup-title">
+                                <span>🅿️</span>
+                                <span>\${markerData.title}</span>
+                              </h4>
+                            </div>
+                            <div class="popup-content">
+                              <div class="status-badge \${markerData.isOccupied ? 'status-occupied' : 'status-available'}">
+                                <span>\${markerData.isOccupied ? '❌' : '✅'}</span>
+                                <span>\${markerData.isOccupied ? 'Occupied' : 'Available'}</span>
+                              </div>
+
+                              <div class="info-row">
+                                <div class="info-label">Location</div>
+                                <div class="info-text">\${markerData.streetAddress}</div>
+                              </div>
+
+                              <div class="info-row">
+                                <div class="info-label">Rules</div>
+                                <div class="info-text">\${markerData.restriction.replace(/Location:.*?\\\\n/g, '').replace(/Status:.*?\\\\n/g, '').replace(/Last updated:.*$/g, '').trim()}</div>
+                              </div>
+
+                              <a href="\${googleMapsUrl}" target="_blank" rel="noopener noreferrer" class="directions-btn">
+                                🧭 Directions
+                              </a>
+
+                              <div class="last-updated">\${new Date().toLocaleTimeString()}</div>
+                            </div>
+                          </div>
+                        \`;
+                      }
+
                       infoWindow.setContent(infoContent);
                       infoWindow.open(map, targetMarker);
                     }
@@ -1744,6 +2025,73 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
               lat: lat,
               lng: lng
             }, '*');
+          }
+
+          // Function to select parking spot from POI popup
+          function selectParkingFromPOI(parkingId) {
+            // Find the parking marker and center on it
+            const parkingMarker = parkingMarkers.find(marker =>
+              marker.get('markerId') === parkingId
+            );
+
+            if (parkingMarker) {
+              // Center map on parking spot
+              map.setCenter(parkingMarker.getPosition());
+              map.setZoom(18);
+
+              // Close current info window
+              infoWindow.close();
+
+              // Open parking spot info window after a short delay
+              setTimeout(() => {
+                // Find the parking marker data
+                const parkingData = markersData.find(m => m.id === parkingId);
+                if (parkingData) {
+                  const googleMapsUrl = 'https://www.google.com/maps/dir/?api=1&destination=' + parkingData.lat + ',' + parkingData.lng;
+                  const parkingInfoContent = \`
+                    <div class="custom-info-window">
+                      <div class="popup-header">
+                        <h4 class="popup-title">
+                          <span>🅿️</span>
+                          <span>\${parkingData.title}</span>
+                        </h4>
+                      </div>
+                      <div class="popup-content">
+                        <div class="status-badge status-available">
+                          <span>✅</span>
+                          <span>Available</span>
+                        </div>
+
+                        <div class="info-row">
+                          <div class="info-label">Location</div>
+                          <div class="info-text">\${parkingData.streetAddress}</div>
+                        </div>
+
+                        <div class="info-row">
+                          <div class="info-label">Rules</div>
+                          <div class="info-text">\${parkingData.restriction.replace(/Location:.*?\\\\n/g, '').replace(/Status:.*?\\\\n/g, '').replace(/Last updated:.*$/g, '').trim()}</div>
+                        </div>
+
+                        <a href="\${googleMapsUrl}" target="_blank" rel="noopener noreferrer" class="directions-btn">
+                          🧭 Directions
+                        </a>
+
+                        <div class="last-updated">\${new Date().toLocaleTimeString()}</div>
+                      </div>
+                    </div>
+                  \`;
+
+                  infoWindow.setContent(parkingInfoContent);
+                  infoWindow.open(map, parkingMarker);
+                }
+              }, 300);
+
+              // Send message to parent to select this parking spot
+              window.parent.postMessage({
+                type: 'SELECT_PARKING_FROM_POI',
+                parkingId: parkingId
+              }, '*');
+            }
           }
 
           // Function to search for POI using Google Places API
@@ -1909,6 +2257,13 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
         const { poiId, name, lat, lng } = event.data;
         // Save POI as favorite
         savePOIAsFavorite(poiId, name, lat, lng);
+      } else if (event.data.type === 'SELECT_PARKING_FROM_POI') {
+        const { parkingId } = event.data;
+        // Find and select the parking spot in the list
+        const parkingMarker = markersWithDistances.find(marker => marker.id === parkingId);
+        if (parkingMarker) {
+          setSelectedMarker(parkingMarker);
+        }
       } else if (event.data.type === 'POI_SEARCH_RESULT') {
         const { results, status, error_message } = event.data;
         console.log('Received POI search results:', results?.length, 'status:', status);
@@ -1929,7 +2284,7 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, []);
+  }, [markersWithDistances]);
 
   // Function to save POI as favorite
   const savePOIAsFavorite = async (poiId: string, name: string, lat: number, lng: number) => {
