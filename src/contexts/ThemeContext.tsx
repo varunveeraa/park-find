@@ -82,12 +82,10 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
     }
   };
 
-  // Toggle between light, dark, and system modes
+  // Toggle between light and dark modes only
   const toggleTheme = () => {
-    const modes: ThemeMode[] = ['light', 'dark', 'system'];
-    const currentIndex = modes.indexOf(themeMode);
-    const nextIndex = (currentIndex + 1) % modes.length;
-    setThemeMode(modes[nextIndex]);
+    const nextMode = themeMode === 'light' ? 'dark' : 'light';
+    setThemeMode(nextMode);
   };
 
   // Toggle color blind mode

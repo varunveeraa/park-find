@@ -1,4 +1,3 @@
-import { IconSymbol } from '@/components/ui/IconSymbol';
 import { Colors } from '@/constants/Colors';
 import { useTheme } from '@/src/contexts/ThemeContext';
 import { FavoriteSpot, favoritesService } from '@/src/services/database/favoritesService';
@@ -200,11 +199,7 @@ export default function SavedScreen() {
             onPress={() => removeSaved(item.id)}
             activeOpacity={0.8}
           >
-            <View style={styles.removeIconContainer}>
-              <View style={styles.bookmarkShape}>
-                <View style={styles.bookmarkNotch} />
-              </View>
-            </View>
+            <Text style={styles.heartIcon}>💔</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -237,7 +232,7 @@ export default function SavedScreen() {
       
       <View style={styles.header}>
         <View style={styles.titleContainer}>
-          <Text style={styles.title}>🔖 Saved Parking</Text>
+          <Text style={styles.title}>❤️ Saved Parking</Text>
           <Text style={styles.subtitle}>Your saved parking spots</Text>
         </View>
         
@@ -253,13 +248,13 @@ export default function SavedScreen() {
 
       {savedSpots.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <IconSymbol name="bookmark" size={80} color={colors.textSecondary} />
+          <Text style={styles.emptyIcon}>💙</Text>
           <Text style={styles.emptyTitle}>No Saved Spots Yet</Text>
           <Text style={styles.emptySubtitle}>
             Start adding parking spots to your saved spots from the Parking Map screen.
           </Text>
           <Text style={styles.emptyHint}>
-            💡 Tip: Tap the save icon on any parking spot to save it here!
+            💡 Tip: Tap the heart icon on any parking spot to save it here!
           </Text>
         </View>
       ) : (
@@ -530,41 +525,14 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
     elevation: 2,
     margin: 4,
   },
-  removeIconContainer: {
-    width: 16,
-    height: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingBottom: 8, // More padding to show the notch
+  heartIcon: {
+    fontSize: 20,
+    textAlign: 'center',
   },
-  bookmarkShape: {
-    width: 10,
-    height: 12,
-    borderTopLeftRadius: 1,
-    borderTopRightRadius: 1,
-    borderWidth: 1,
-    position: 'relative',
-    backgroundColor: colors.error,
-    borderColor: colors.error,
-    shadowColor: colors.error,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.3,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  bookmarkNotch: {
-    position: 'absolute',
-    bottom: -1,
-    left: '50%',
-    marginLeft: -2,
-    width: 0,
-    height: 0,
-    borderLeftWidth: 2,
-    borderRightWidth: 2,
-    borderBottomWidth: 3,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-    borderBottomColor: colors.cardBackground,
+  emptyIcon: {
+    fontSize: 80,
+    textAlign: 'center',
+    marginBottom: 16,
   },
   cardAccent: {
     height: 1,

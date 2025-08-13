@@ -814,13 +814,102 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
       lng: marker.coordinate.longitude,
       title: marker.title,
       description: marker.description,
-      color: marker.isOccupied ? '#FF0000' : '#00FF00',
+      color: marker.isOccupied ? '#ff6b6b' : '#4ecdc4',
       isOccupied: marker.isOccupied,
       restriction: marker.currentRestriction || 'No restriction data',
       isRestricted: marker.isRestricted || false,
-      streetAddress: marker.streetAddress || 'Address not available',
-      isSelected: selectedMarker?.id === marker.id
+      streetAddress: marker.streetAddress || 'Address not available'
+      // Removed isSelected to prevent map re-rendering on selection
     }));
+
+    // Define map styles based on theme
+    const isDarkMode = colorScheme === 'dark';
+    const mapStyles = isDarkMode ? [
+      { elementType: "geometry", stylers: [{ color: "#242f3e" }] },
+      { elementType: "labels.text.stroke", stylers: [{ color: "#242f3e" }] },
+      { elementType: "labels.text.fill", stylers: [{ color: "#746855" }] },
+      {
+        featureType: "administrative.locality",
+        elementType: "labels.text.fill",
+        stylers: [{ color: "#d59563" }]
+      },
+      {
+        featureType: "poi",
+        elementType: "labels.text.fill",
+        stylers: [{ color: "#d59563" }]
+      },
+      {
+        featureType: "poi.park",
+        elementType: "geometry",
+        stylers: [{ color: "#263c3f" }]
+      },
+      {
+        featureType: "poi.park",
+        elementType: "labels.text.fill",
+        stylers: [{ color: "#6b9a76" }]
+      },
+      {
+        featureType: "road",
+        elementType: "geometry",
+        stylers: [{ color: "#38414e" }]
+      },
+      {
+        featureType: "road",
+        elementType: "geometry.stroke",
+        stylers: [{ color: "#212a37" }]
+      },
+      {
+        featureType: "road",
+        elementType: "labels.text.fill",
+        stylers: [{ color: "#9ca5b3" }]
+      },
+      {
+        featureType: "road.highway",
+        elementType: "geometry",
+        stylers: [{ color: "#746855" }]
+      },
+      {
+        featureType: "road.highway",
+        elementType: "geometry.stroke",
+        stylers: [{ color: "#1f2835" }]
+      },
+      {
+        featureType: "road.highway",
+        elementType: "labels.text.fill",
+        stylers: [{ color: "#f3d19c" }]
+      },
+      {
+        featureType: "transit",
+        elementType: "geometry",
+        stylers: [{ color: "#2f3948" }]
+      },
+      {
+        featureType: "transit.station",
+        elementType: "labels.text.fill",
+        stylers: [{ color: "#d59563" }]
+      },
+      {
+        featureType: "water",
+        elementType: "geometry",
+        stylers: [{ color: "#17263c" }]
+      },
+      {
+        featureType: "water",
+        elementType: "labels.text.fill",
+        stylers: [{ color: "#515c6d" }]
+      },
+      {
+        featureType: "water",
+        elementType: "labels.text.stroke",
+        stylers: [{ color: "#17263c" }]
+      }
+    ] : [
+      {
+        featureType: "poi",
+        elementType: "labels",
+        stylers: [{ visibility: "off" }]
+      }
+    ];
 
     // Calculate bounds for auto-zoom
     const markersBounds = calculateMarkersBounds(markersWithDistances);
@@ -870,51 +959,99 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
             cursor: not-allowed;
           }
 
-          /* Custom info window styling */
+          /* Compact popup styling */
           .custom-info-window {
-            min-width: 250px;
-            font-family: Arial, sans-serif;
+            min-width: 260px;
+            max-width: 300px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #ffffff;
+            border-radius: 8px;
+            padding: 0;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            border: 1px solid rgba(0,0,0,0.1);
+            overflow: hidden;
           }
-          .info-title {
-            margin: 0 0 10px 0;
+          .popup-header {
+            background: #f8f9fa;
+            padding: 12px 16px;
+            border-bottom: 1px solid rgba(0,0,0,0.08);
+          }
+          .popup-title {
+            margin: 0;
             color: #2c3e50;
-            font-size: 16px;
-            font-weight: bold;
+            font-size: 15px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 6px;
           }
-          .info-section {
-            margin: 8px 0;
-            line-height: 1.4;
+          .popup-content {
+            background: white;
+            padding: 12px 16px;
           }
-          .info-label {
-            font-weight: bold;
-            color: #34495e;
+          .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            margin-bottom: 8px;
           }
           .status-available {
-            color: #00AA00;
-            font-weight: bold;
+            background: #d4edda;
+            color: #155724;
           }
           .status-occupied {
-            color: #FF0000;
-            font-weight: bold;
+            background: #f8d7da;
+            color: #721c24;
+          }
+          .info-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin: 6px 0;
+            gap: 8px;
+          }
+          .info-label {
+            font-size: 11px;
+            color: #6c757d;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            flex-shrink: 0;
+            width: 60px;
+          }
+          .info-text {
+            color: #495057;
+            font-size: 13px;
+            line-height: 1.3;
+            font-weight: 400;
+            flex: 1;
+            text-align: right;
           }
           .directions-btn {
-            display: inline-block;
-            background-color: #4285f4;
+            display: block;
+            background: #007bff;
             color: white;
             padding: 8px 16px;
             text-decoration: none;
             border-radius: 6px;
-            font-weight: bold;
-            font-size: 14px;
-            margin-top: 10px;
+            font-weight: 500;
+            font-size: 13px;
+            text-align: center;
+            margin: 8px 0 4px 0;
+            transition: background-color 0.2s ease;
           }
           .directions-btn:hover {
-            background-color: #3367d6;
+            background: #0056b3;
           }
           .last-updated {
-            font-size: 12px;
-            color: #7f8c8d;
-            margin-top: 8px;
+            font-size: 10px;
+            color: #6c757d;
+            text-align: center;
+            margin-top: 4px;
           }
 
           /* Pulse animation for user location */
@@ -972,18 +1109,31 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
             console.log('Google Maps API loaded successfully');
             document.getElementById('status').textContent = 'Creating map...';
 
-            // Initialize the map with calculated center
-            map = new google.maps.Map(document.getElementById("map"), {
-              zoom: 13, // Will be adjusted after markers are added
-              center: markersBounds.center,
-              styles: [
-                {
-                  featureType: "poi",
-                  elementType: "labels",
-                  stylers: [{ visibility: "off" }]
-                }
-              ]
-            });
+            // Initialize the map with calculated center and theme-based styles
+            const mapStyles = ${JSON.stringify(mapStyles)};
+
+            try {
+              map = new google.maps.Map(document.getElementById("map"), {
+                zoom: 13, // Will be adjusted after markers are added
+                center: markersBounds.center,
+                styles: mapStyles
+              });
+              console.log('Map created successfully with styles:', mapStyles.length, 'rules');
+            } catch (error) {
+              console.error('Error creating map with styles:', error);
+              // Fallback: create map without styles
+              try {
+                map = new google.maps.Map(document.getElementById("map"), {
+                  zoom: 13,
+                  center: markersBounds.center
+                });
+                console.log('Map created successfully without styles');
+              } catch (fallbackError) {
+                console.error('Error creating fallback map:', fallbackError);
+                document.getElementById('status').textContent = 'Error creating map: ' + fallbackError.message;
+                return;
+              }
+            }
 
             // Create info window
             infoWindow = new google.maps.InfoWindow();
@@ -993,38 +1143,59 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
 
             // Add parking markers
             markersData.forEach(markerData => {
-              // Create standard marker
+              // Create GPS checkpoint marker
+              const gpsCheckpointPath = 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z';
+
               const marker = new google.maps.Marker({
                 position: { lat: markerData.lat, lng: markerData.lng },
                 map: map,
                 title: markerData.title,
                 icon: {
-                  path: google.maps.SymbolPath.CIRCLE,
-                  fillColor: markerData.isSelected ? '#e74c3c' : markerData.color,
-                  fillOpacity: 0.8,
+                  path: gpsCheckpointPath,
+                  fillColor: markerData.color,
+                  fillOpacity: 0.7,
                   strokeColor: '#ffffff',
-                  strokeWeight: markerData.isSelected ? 3 : 2,
-                  scale: markerData.isSelected ? 12 : 8
+                  strokeWeight: 1,
+                  strokeOpacity: 0.8,
+                  scale: 1.1,
+                  anchor: new google.maps.Point(12, 22)
                 }
               });
+
+              // Store marker ID for selection
+              marker.set('markerId', markerData.id);
 
               // Create info window content
               const googleMapsUrl = 'https://www.google.com/maps/dir/?api=1&destination=' + markerData.lat + ',' + markerData.lng;
               const infoContent = \`
                 <div class="custom-info-window">
-                  <h4 class="info-title">🅿️ \${markerData.title}</h4>
-                  <div class="info-section"><span class="info-label">📍 Location:</span><br>\${markerData.streetAddress}</div>
-                  <div class="info-section"><span class="info-label">🅿️ Restriction:</span><br>\${markerData.restriction}</div>
-                  <div class="info-section"><span class="info-label">📊 Status:</span><br>
-                    \${markerData.isOccupied ?
-                      '<span class="status-occupied">❌ Not Available</span>' :
-                      '<span class="status-available">✅ Available</span>'}
+                  <div class="popup-header">
+                    <h4 class="popup-title">
+                      <span>🅿️</span>
+                      <span>\${markerData.title}</span>
+                    </h4>
                   </div>
-                  <div class="last-updated">Last updated: \${new Date().toLocaleTimeString()}</div>
-                  <div style="text-align: center; margin-top: 15px;">
+                  <div class="popup-content">
+                    <div class="status-badge \${markerData.isOccupied ? 'status-occupied' : 'status-available'}">
+                      <span>\${markerData.isOccupied ? '❌' : '✅'}</span>
+                      <span>\${markerData.isOccupied ? 'Occupied' : 'Available'}</span>
+                    </div>
+
+                    <div class="info-row">
+                      <div class="info-label">Location</div>
+                      <div class="info-text">\${markerData.streetAddress}</div>
+                    </div>
+
+                    <div class="info-row">
+                      <div class="info-label">Rules</div>
+                      <div class="info-text">\${markerData.restriction.replace(/Location:.*?\\n/g, '').replace(/Status:.*?\\n/g, '').replace(/Last updated:.*$/g, '').trim()}</div>
+                    </div>
+
                     <a href="\${googleMapsUrl}" target="_blank" rel="noopener noreferrer" class="directions-btn">
-                      🧭 Get Directions
+                      🧭 Directions
                     </a>
+
+                    <div class="last-updated">\${new Date().toLocaleTimeString()}</div>
                   </div>
                 </div>
               \`;
@@ -1035,21 +1206,13 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
                 infoWindow.open(map, marker);
               });
 
-              // Auto-open info window if this marker is selected
-              if (markerData.isSelected) {
-                setTimeout(() => {
-                  infoWindow.setContent(infoContent);
-                  infoWindow.open(map, marker);
-                  map.setCenter({ lat: markerData.lat, lng: markerData.lng });
-                  map.setZoom(16);
-                }, 100);
-              }
+              // Selection is now handled via postMessage for smooth animations
 
               parkingMarkers.push(marker);
             });
 
-            // Auto-zoom to fit all markers if bounds are available and no specific marker is selected
-            if (markersBounds.bounds && markersData.length > 0 && !${JSON.stringify(selectedMarker)}) {
+            // Auto-zoom to fit all markers if bounds are available
+            if (markersBounds.bounds && markersData.length > 0) {
               const bounds = new google.maps.LatLngBounds();
               bounds.extend(new google.maps.LatLng(markersBounds.bounds.south, markersBounds.bounds.west));
               bounds.extend(new google.maps.LatLng(markersBounds.bounds.north, markersBounds.bounds.east));
@@ -1085,38 +1248,56 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
 
               // Create accuracy circle
               userLocationCircle = new google.maps.Circle({
-                strokeColor: '#4285F4',
+                strokeColor: '#2c3e50',
                 strokeOpacity: 0.8,
                 strokeWeight: 2,
-                fillColor: '#4285F4',
+                fillColor: '#2c3e50',
                 fillOpacity: 0.15,
                 map: map,
                 center: { lat: userLocationData.lat, lng: userLocationData.lng },
                 radius: userLocationData.accuracy || 50 // accuracy in meters
               });
 
-              // Create user location marker
+              // Create user location marker with crosshair GPS icon
+              const userLocationPath = 'M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3A8.994 8.994 0 0 0 13 3.06V1h-2v2.06A8.994 8.994 0 0 0 3.06 11H1v2h2.06A8.994 8.994 0 0 0 11 20.94V23h2v-2.06A8.994 8.994 0 0 0 20.94 13H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z';
+
               userLocationMarker = new google.maps.Marker({
                 position: { lat: userLocationData.lat, lng: userLocationData.lng },
                 map: map,
                 title: 'Your Location',
                 icon: {
-                  path: google.maps.SymbolPath.CIRCLE,
-                  fillColor: '#4285F4',
+                  path: userLocationPath,
+                  fillColor: '#2c3e50',
                   fillOpacity: 1,
                   strokeColor: '#ffffff',
-                  strokeWeight: 3,
-                  scale: 8
+                  strokeWeight: 2,
+                  scale: 0.8,
+                  anchor: new google.maps.Point(12, 12)
                 },
                 zIndex: 1000 // Ensure user marker appears above parking markers
               });
 
               // Add info window for user location
-              const userInfoContent = '<div class="custom-info-window">' +
-                '<h4 class="info-title">📍 Your Location</h4>' +
-                '<div class="info-section">Accuracy: ±' + Math.round(userLocationData.accuracy || 50) + ' meters</div>' +
-                '<div class="info-section">Coordinates: ' + userLocationData.lat.toFixed(6) + ', ' + userLocationData.lng.toFixed(6) + '</div>' +
-                '</div>';
+              const userInfoContent = \`
+                <div class="custom-info-window">
+                  <div class="popup-header">
+                    <h4 class="popup-title">
+                      <span>📍</span>
+                      <span>Your Location</span>
+                    </h4>
+                  </div>
+                  <div class="popup-content">
+                    <div class="info-row">
+                      <div class="info-label">Accuracy</div>
+                      <div class="info-text">±\${Math.round(userLocationData.accuracy || 50)}m</div>
+                    </div>
+                    <div class="info-row">
+                      <div class="info-label">Coords</div>
+                      <div class="info-text">\${userLocationData.lat.toFixed(4)}, \${userLocationData.lng.toFixed(4)}</div>
+                    </div>
+                  </div>
+                </div>
+              \`;
 
               userLocationMarker.addListener('click', () => {
                 infoWindow.setContent(userInfoContent);
@@ -1152,21 +1333,148 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
           function centerOnUserLocation() {
             const userLocationData = ${JSON.stringify(userLocationData)};
             if (userLocationData && map) {
-              map.setCenter({ lat: userLocationData.lat, lng: userLocationData.lng });
-              map.setZoom(16);
+              // Smooth pan to user location
+              map.panTo({ lat: userLocationData.lat, lng: userLocationData.lng });
+
+              // Smooth zoom animation
+              const currentZoom = map.getZoom() || 13;
+              const targetZoom = 16;
+              const zoomStep = (targetZoom - currentZoom) / 8;
+
+              let step = 0;
+              const zoomInterval = setInterval(() => {
+                step++;
+                const newZoom = currentZoom + (zoomStep * step);
+                map.setZoom(newZoom);
+
+                if (step >= 8) {
+                  clearInterval(zoomInterval);
+                  map.setZoom(targetZoom);
+                }
+              }, 60);
 
               // Open user location info window if marker exists
               if (userLocationMarker && infoWindow) {
-                const userInfoContent = '<div class="custom-info-window">' +
-                  '<h4 class="info-title">📍 Your Location</h4>' +
-                  '<div class="info-section">Accuracy: ±' + Math.round(userLocationData.accuracy || 50) + ' meters</div>' +
-                  '<div class="info-section">Coordinates: ' + userLocationData.lat.toFixed(6) + ', ' + userLocationData.lng.toFixed(6) + '</div>' +
-                  '</div>';
+                const userInfoContent = \`
+                  <div class="custom-info-window">
+                    <div class="popup-header">
+                      <h4 class="popup-title">
+                        <span class="popup-title-icon">📍</span>
+                        <span>Your Location</span>
+                      </h4>
+                    </div>
+                    <div class="popup-content">
+                      <div class="info-card">
+                        <div class="info-row">
+                          <span class="info-icon">🎯</span>
+                          <span class="info-text">Accuracy: ±\${Math.round(userLocationData.accuracy || 50)} meters</span>
+                        </div>
+                        <div class="info-row">
+                          <span class="info-icon">🌐</span>
+                          <span class="info-text">\${userLocationData.lat.toFixed(6)}, \${userLocationData.lng.toFixed(6)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                \`;
                 infoWindow.setContent(userInfoContent);
                 infoWindow.open(map, userLocationMarker);
               }
             }
           }
+
+          // Listen for marker selection messages from parent
+          window.addEventListener('message', function(event) {
+            if (event.data.type === 'SELECT_MARKER' && map && parkingMarkers.length > 0) {
+              const { markerId, lat, lng } = event.data;
+
+              // Find the marker
+              const targetMarker = parkingMarkers.find(m => m.get('markerId') === markerId);
+              if (targetMarker) {
+                // Use Google Maps smooth animation with easing
+                map.panTo({ lat: lat, lng: lng });
+
+                // Smooth zoom with better timing and easing
+                const currentZoom = map.getZoom() || 13;
+                const targetZoom = 17;
+
+                // Only zoom if we need to change zoom level significantly
+                if (Math.abs(currentZoom - targetZoom) > 1) {
+                  // Use a smooth zoom animation with better easing
+                  const animateZoom = () => {
+                    const zoomDiff = targetZoom - currentZoom;
+                    const steps = Math.max(8, Math.abs(zoomDiff) * 2); // More steps for smoother animation
+                    const zoomStep = zoomDiff / steps;
+                    let step = 0;
+
+                    const zoomInterval = setInterval(() => {
+                      step++;
+                      const progress = step / steps;
+                      // Use easing function for smoother animation
+                      const easedProgress = 1 - Math.pow(1 - progress, 3); // Ease-out cubic
+                      const newZoom = currentZoom + (zoomDiff * easedProgress);
+
+                      map.setZoom(newZoom);
+
+                      if (step >= steps) {
+                        clearInterval(zoomInterval);
+                        map.setZoom(targetZoom);
+                      }
+                    }, 40); // Slightly faster frame rate for smoother animation
+                  };
+
+                  // Start zoom animation after a short delay to let pan settle
+                  setTimeout(animateZoom, 200);
+                }
+
+                // Open info window after animation completes
+                const infoWindowDelay = Math.abs(currentZoom - targetZoom) > 1 ? 800 : 300; // Longer delay if zooming
+                setTimeout(() => {
+                  if (infoWindow) {
+                    // Find marker data for info window
+                    const markerData = markersData.find(m => m.id === markerId);
+                    if (markerData) {
+                      const googleMapsUrl = 'https://www.google.com/maps/dir/?api=1&destination=' + markerData.lat + ',' + markerData.lng;
+                      const infoContent = \`
+                        <div class="custom-info-window">
+                          <div class="popup-header">
+                            <h4 class="popup-title">
+                              <span>🅿️</span>
+                              <span>\${markerData.title}</span>
+                            </h4>
+                          </div>
+                          <div class="popup-content">
+                            <div class="status-badge \${markerData.isOccupied ? 'status-occupied' : 'status-available'}">
+                              <span>\${markerData.isOccupied ? '❌' : '✅'}</span>
+                              <span>\${markerData.isOccupied ? 'Occupied' : 'Available'}</span>
+                            </div>
+
+                            <div class="info-row">
+                              <div class="info-label">Location</div>
+                              <div class="info-text">\${markerData.streetAddress}</div>
+                            </div>
+
+                            <div class="info-row">
+                              <div class="info-label">Rules</div>
+                              <div class="info-text">\${markerData.restriction.replace(/Location:.*?\\\\n/g, '').replace(/Status:.*?\\\\n/g, '').replace(/Last updated:.*$/g, '').trim()}</div>
+                            </div>
+
+                            <a href="\${googleMapsUrl}" target="_blank" rel="noopener noreferrer" class="directions-btn">
+                              🧭 Directions
+                            </a>
+
+                            <div class="last-updated">\${new Date().toLocaleTimeString()}</div>
+                          </div>
+                        </div>
+                      \`;
+                      infoWindow.setContent(infoContent);
+                      infoWindow.open(map, targetMarker);
+                    }
+                  }
+                }, infoWindowDelay); // Wait for animation to complete
+              }
+            }
+          });
 
           // Simplified error handling
           window.gm_authFailure = function() {
@@ -1218,14 +1526,30 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
       </body>
       </html>
     `;
-  }, [markersWithDistances, selectedMarker, userLocation, calculateMarkersBounds]);
+  }, [markersWithDistances, userLocation, calculateMarkersBounds, colorScheme]);
 
-  // Generate map HTML when markers or selected marker changes
+  // Generate map HTML when markers change (but not when selection changes)
   useEffect(() => {
     if (markersWithDistances.length > 0) {
       setMapHtml(generateMapHTML());
     }
-  }, [markersWithDistances, selectedMarker, generateMapHTML]);
+  }, [markersWithDistances, generateMapHTML]);
+
+  // Handle marker selection with smooth animation (without re-rendering map)
+  useEffect(() => {
+    if (selectedMarker && mapHtml) {
+      // Use postMessage to communicate with the map iframe
+      const iframe = document.querySelector('iframe[title="Melbourne Parking Sensors Map"]') as HTMLIFrameElement;
+      if (iframe && iframe.contentWindow) {
+        iframe.contentWindow.postMessage({
+          type: 'SELECT_MARKER',
+          markerId: selectedMarker.id,
+          lat: selectedMarker.coordinate.latitude,
+          lng: selectedMarker.coordinate.longitude
+        }, '*');
+      }
+    }
+  }, [selectedMarker, mapHtml]);
 
   if (loading && markers.length === 0) {
     return (
@@ -1515,18 +1839,12 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
                           style={styles.bookmarkButton}
                           onPress={() => toggleSaved(marker)}
                         >
-                          <View style={styles.bookmarkIconContainer}>
-                            <View style={[
-                              styles.bookmarkShape,
-                              savedIds.has(marker.id) ? styles.bookmarkShapeFilled : styles.bookmarkShapeEmpty
-                            ]}>
-                              {/* Create the bookmark notch using clip-path effect */}
-                              <View style={[
-                                styles.bookmarkNotch,
-                                savedIds.has(marker.id) ? styles.bookmarkNotchFilled : styles.bookmarkNotchEmpty
-                              ]} />
-                            </View>
-                          </View>
+                          <Text style={[
+                            styles.heartIcon,
+                            savedIds.has(marker.id) ? styles.heartIconFilled : styles.heartIconEmpty
+                          ]}>
+                            {savedIds.has(marker.id) ? '❤️' : '🤍'}
+                          </Text>
                         </TouchableOpacity>
                       </View>
                       <Text style={styles.clickHint}>
@@ -1695,7 +2013,7 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     backgroundColor: colors.headerBackground,
-    padding: 20,
+    padding: 12,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
     shadowColor: colors.shadow,
@@ -1755,14 +2073,14 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
     gap: 12,
   },
   title: {
-    fontSize: 28,
+    fontSize: 22,
     fontWeight: '900',
     color: colors.text,
-    marginBottom: 3,
+    marginBottom: 1,
     letterSpacing: -0.5,
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: 12,
     color: colors.textSecondary,
     fontWeight: '500',
     opacity: 0.9,
@@ -1840,33 +2158,33 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-around',
     backgroundColor: colors.backgroundSecondary,
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    marginBottom: 8,
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    marginBottom: 6,
   },
   statItem: {
     alignItems: 'center',
     flex: 1,
   },
   statNumber: {
-    fontSize: 20,
+    fontSize: 16,
     fontWeight: 'bold',
     color: colors.text,
-    marginBottom: 2,
+    marginBottom: 1,
   },
   statLabel: {
-    fontSize: 11,
+    fontSize: 10,
     color: colors.textSecondary,
     fontWeight: '500',
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
   },
   statDivider: {
     width: 1,
-    height: 30,
+    height: 20,
     backgroundColor: colors.border,
-    marginHorizontal: 8,
+    marginHorizontal: 6,
   },
   searchResultsBanner: {
     backgroundColor: colors.info,
@@ -2295,56 +2613,19 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
     borderRadius: 4,
     backgroundColor: 'transparent',
     width: 28,
-    height: 40, // Increased height to accommodate full bookmark icon
+    height: 36,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  bookmarkIconContainer: {
-    width: 16,
-    height: 26, // Increased height to show full bookmark
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingBottom: 4, // Enough padding to show the notch
+  heartIcon: {
+    fontSize: 20,
+    textAlign: 'center',
   },
-  bookmarkShape: {
-    width: 10,
-    height: 12,
-    borderTopLeftRadius: 1,
-    borderTopRightRadius: 1,
-    borderWidth: 1,
-    position: 'relative',
+  heartIconFilled: {
+    // Red heart emoji already has color
   },
-  bookmarkShapeFilled: {
-    backgroundColor: colors.buttonPrimary,
-    borderColor: colors.buttonPrimary,
-    shadowColor: colors.buttonPrimary,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.3,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  bookmarkShapeEmpty: {
-    backgroundColor: 'transparent',
-    borderColor: colors.textSecondary,
-  },
-  bookmarkNotch: {
-    position: 'absolute',
-    bottom: -1,
-    left: '50%',
-    marginLeft: -2,
-    width: 0,
-    height: 0,
-    borderLeftWidth: 2,
-    borderRightWidth: 2,
-    borderBottomWidth: 3,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-  },
-  bookmarkNotchFilled: {
-    borderBottomColor: colors.background,
-  },
-  bookmarkNotchEmpty: {
-    borderBottomColor: colors.background,
+  heartIconEmpty: {
+    // White heart emoji already has color
   },
   bookmarkFilled: {
     // Legacy - kept for compatibility

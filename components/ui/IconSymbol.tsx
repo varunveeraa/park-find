@@ -23,6 +23,9 @@ const MAPPING = {
   'heart': 'favorite-border',
   'bookmark.fill': 'bookmark',
   'bookmark': 'bookmark-border',
+  'sun.max': 'wb-sunny',
+  'moon': 'brightness-2',
+  'gear': 'settings',
 } as IconMapping;
 
 /**

@@ -1,7 +1,8 @@
-import React from 'react';
-import { TouchableOpacity, StyleSheet, Text, View } from 'react-native';
-import { useTheme, ThemeMode } from '@/src/contexts/ThemeContext';
+import { IconSymbol } from '@/components/ui/IconSymbol';
 import { Colors } from '@/constants/Colors';
+import { ThemeMode, useTheme } from '@/src/contexts/ThemeContext';
+import React from 'react';
+import { StyleSheet, Text, TouchableOpacity } from 'react-native';
 
 interface ThemeToggleButtonProps {
   size?: number;
@@ -11,16 +12,14 @@ interface ThemeToggleButtonProps {
 export function ThemeToggleButton({ size = 24, showLabel = false }: ThemeToggleButtonProps) {
   const { themeMode, colorScheme, toggleTheme } = useTheme();
 
-  const getThemeIcon = (mode: ThemeMode): string => {
+  const getThemeIconName = (mode: ThemeMode) => {
     switch (mode) {
       case 'light':
-        return '☀️';
+        return 'sun.max';
       case 'dark':
-        return '🌙';
-      case 'system':
-        return '⚙️';
+        return 'moon';
       default:
-        return '☀️';
+        return 'sun.max';
     }
   };
 
@@ -30,8 +29,6 @@ export function ThemeToggleButton({ size = 24, showLabel = false }: ThemeToggleB
         return 'Light';
       case 'dark':
         return 'Dark';
-      case 'system':
-        return 'Auto';
       default:
         return 'Light';
     }
@@ -53,9 +50,11 @@ export function ThemeToggleButton({ size = 24, showLabel = false }: ThemeToggleB
       accessibilityLabel={`Switch theme. Current: ${getThemeLabel(themeMode)}`}
       accessibilityRole="button"
     >
-      <Text style={[styles.icon, { fontSize: size }]}>
-        {getThemeIcon(themeMode)}
-      </Text>
+      <IconSymbol
+        name={getThemeIconName(themeMode)}
+        size={size}
+        color={colors.text}
+      />
       {showLabel && (
         <Text style={[styles.label, { color: colors.text }]}>
           {getThemeLabel(themeMode)}

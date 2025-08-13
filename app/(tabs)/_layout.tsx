@@ -54,7 +54,7 @@ export default function TabLayout() {
         name="favourites"
         options={{
           title: 'Saved',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="bookmark.fill" color={color} />,
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="heart.fill" color={color} />,
         }}
       />
     </Tabs>
