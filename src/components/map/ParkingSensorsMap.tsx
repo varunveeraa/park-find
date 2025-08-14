@@ -726,7 +726,36 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
         { latitude: userLocation.coords.latitude, longitude: userLocation.coords.longitude },
         { latitude: poi.geometry.location.lat, longitude: poi.geometry.location.lng }
       ) : null,
-      drivingTime: null,
+      distanceFromUser: userLocation &&
+                        userLocation.coords &&
+                        typeof userLocation.coords.latitude === 'number' &&
+                        typeof userLocation.coords.longitude === 'number' ? calculateDistance(
+        { latitude: userLocation.coords.latitude, longitude: userLocation.coords.longitude },
+        { latitude: poi.geometry.location.lat, longitude: poi.geometry.location.lng }
+      ) : undefined,
+      drivingTime: userLocation &&
+                   userLocation.coords &&
+                   typeof userLocation.coords.latitude === 'number' &&
+                   typeof userLocation.coords.longitude === 'number' ? (() => {
+        const distanceKm = calculateDistance(
+          { latitude: userLocation.coords.latitude, longitude: userLocation.coords.longitude },
+          { latitude: poi.geometry.location.lat, longitude: poi.geometry.location.lng }
+        );
+        // Estimate driving time: assume 30 km/h average speed in city
+        return distanceKm ? Math.round((distanceKm / 30) * 60) : null; // minutes
+      })() : null,
+      drivingTimeFromUser: userLocation &&
+                           userLocation.coords &&
+                           typeof userLocation.coords.latitude === 'number' &&
+                           typeof userLocation.coords.longitude === 'number' ? (() => {
+        const distanceKm = calculateDistance(
+          { latitude: userLocation.coords.latitude, longitude: userLocation.coords.longitude },
+          { latitude: poi.geometry.location.lat, longitude: poi.geometry.location.lng }
+        );
+        // Estimate driving time: assume 30 km/h average speed in city
+        return distanceKm ? Math.round((distanceKm / 30) * 60) : null; // minutes
+      })() : undefined,
+      isDistanceEstimate: true, // POI distances are estimates
       type: 'poi' as const,
       rating: poi.rating,
       types: poi.types,
