@@ -81,9 +81,11 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
   const [selectedPOI, setSelectedPOI] = useState<PlaceResult | null>(null);
   const [isSearchingPOI, setIsSearchingPOI] = useState(false);
   const [searchType, setSearchType] = useState<'parking' | 'poi' | 'mixed'>('parking');
-  const [isListening, setIsListening] = useState(false);
   const [speechSupported, setSpeechSupported] = useState(false);
-  const recognitionRef = useRef<any>(null);
+
+  // "To" search state (now the main search functionality)
+  const [isListeningTo, setIsListeningTo] = useState(false);
+  const toRecognitionRef = useRef<any>(null);
 
   // Determine if we should use horizontal layout (web/tablet)
   const isWideScreen = screenData.width >= 768;
@@ -447,7 +449,7 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
 
     console.log('Starting POI search...');
     setIsSearchingPOI(true);
-    setSearchType('poi');
+    setSearchType('mixed'); // Set to mixed to show both parking and POI results
 
     // Send POI search request to map iframe
     const iframe = document.querySelector('iframe[title="Melbourne Parking Sensors Map"]') as HTMLIFrameElement;
@@ -455,10 +457,11 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
       const searchParams = {
         query: query,
         location: userLocation &&
-                  typeof userLocation.latitude === 'number' &&
-                  typeof userLocation.longitude === 'number' ? {
-          lat: userLocation.latitude,
-          lng: userLocation.longitude
+                  userLocation.coords &&
+                  typeof userLocation.coords.latitude === 'number' &&
+                  typeof userLocation.coords.longitude === 'number' ? {
+          lat: userLocation.coords.latitude,
+          lng: userLocation.coords.longitude
         } : undefined,
         radius: 10000, // 10km radius
       };
@@ -478,9 +481,17 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
     }
   }, [userLocation]);
 
-  // Enhanced search query handler
-  const handleSearchQueryChange = useCallback((query: string) => {
-    setSearchQuery(query);
+
+
+  // Handle "To" search query changes (now the main search)
+  const handleToSearchQueryChange = useCallback((query: string) => {
+    setSearchQuery(query); // Use the main search query state
+
+    if (query.trim() === '') {
+      setPOIResults([]);
+      setSearchType('parking');
+      return;
+    }
 
     // Debounce POI search
     const timeoutId = setTimeout(() => {
@@ -490,22 +501,22 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
     return () => clearTimeout(timeoutId);
   }, [searchPOI]);
 
-  // Speech recognition functionality
-  const toggleSpeechRecognition = useCallback(() => {
+  // Speech recognition functionality for "To" search
+  const toggleToSpeechRecognition = useCallback(() => {
     if (Platform.OS !== 'web' || !speechSupported) {
       Alert.alert('Not Supported', 'Speech recognition is not supported on this device/browser.');
       return;
     }
 
     // If already listening, stop
-    if (isListening && recognitionRef.current) {
-      recognitionRef.current.stop();
+    if (isListeningTo && toRecognitionRef.current) {
+      toRecognitionRef.current.stop();
       return;
     }
 
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     const recognition = new SpeechRecognition();
-    recognitionRef.current = recognition;
+    toRecognitionRef.current = recognition;
 
     // Simple configuration
     recognition.continuous = false;
@@ -513,60 +524,39 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
     recognition.lang = 'en-US';
 
     recognition.onstart = () => {
-      console.log('Speech recognition started');
-      setIsListening(true);
+      console.log('To speech recognition started');
+      setIsListeningTo(true);
     };
 
     recognition.onresult = (event: any) => {
-      console.log('Speech recognition result:', event);
+      console.log('To speech recognition result:', event);
       const transcript = event.results[0][0].transcript;
-      console.log('Transcript:', transcript);
-      handleSearchQueryChange(transcript.trim());
+      console.log('To transcript:', transcript);
+      handleToSearchQueryChange(transcript.trim());
     };
 
     recognition.onerror = (event: any) => {
-      console.error('Speech recognition error:', event.error);
-      setIsListening(false);
-      recognitionRef.current = null;
-
-      if (event.error !== 'aborted') {
-        let errorMessage = 'Please try again.';
-        switch (event.error) {
-          case 'network':
-            errorMessage = 'Network error. Please check your internet connection and try again.';
-            break;
-          case 'not-allowed':
-            errorMessage = 'Microphone access denied. Please allow microphone access in your browser settings.';
-            break;
-          case 'no-speech':
-            errorMessage = 'No speech detected. Please try speaking again.';
-            break;
-          case 'audio-capture':
-            errorMessage = 'Microphone not available. Please check your microphone connection.';
-            break;
-          default:
-            errorMessage = `Error: ${event.error}. Please try again.`;
-        }
-        Alert.alert('Speech Recognition Error', errorMessage);
-      }
+      console.error('To speech recognition error:', event.error);
+      setIsListeningTo(false);
+      toRecognitionRef.current = null;
     };
 
     recognition.onend = () => {
-      console.log('Speech recognition ended');
-      setIsListening(false);
-      recognitionRef.current = null;
+      console.log('To speech recognition ended');
+      setIsListeningTo(false);
+      toRecognitionRef.current = null;
     };
 
     try {
       recognition.start();
-      console.log('Starting speech recognition...');
+      console.log('Starting To speech recognition...');
     } catch (error) {
-      console.error('Failed to start speech recognition:', error);
-      setIsListening(false);
-      recognitionRef.current = null;
+      console.error('Failed to start To speech recognition:', error);
+      setIsListeningTo(false);
+      toRecognitionRef.current = null;
       Alert.alert('Error', 'Failed to start speech recognition.');
     }
-  }, [speechSupported, isListening]);
+  }, [speechSupported, isListeningTo, handleToSearchQueryChange]);
 
   // Load saved spots on component mount
   useEffect(() => {
@@ -702,6 +692,7 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
 
   // Convert POI results to marker-like objects for list display
   const poiAsMarkers = useMemo(() => {
+    console.log(`Converting ${poiResults.length} POI results to markers`);
     return poiResults.map(poi => ({
       id: `poi_${poi.place_id}`,
       coordinate: {
@@ -774,6 +765,7 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
 
     // Add POI markers to the list when search type includes POI
     if (searchType === 'poi' || searchType === 'mixed') {
+      console.log(`Adding ${poiAsMarkers.length} POI markers to filtered results. Search type: ${searchType}`);
       filteredMarkers = [...filteredMarkers, ...poiAsMarkers];
     }
 
@@ -2443,60 +2435,64 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
               showRefreshButton={true}
             />
 
-
-
-            {/* Search Bar */}
-            <View style={styles.searchContainer}>
-            <View style={styles.searchInputContainer}>
-              <Text style={styles.searchIcon}>🔍</Text>
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search parking spots, restaurants, cafes, shops..."
-                placeholderTextColor={colors.placeholder}
-                value={searchQuery}
-                onChangeText={handleSearchQueryChange}
-                autoCapitalize="words"
-                autoCorrect={false}
-              />
-              {searchQuery.length > 0 && (
+            {/* To Search Box */}
+            <View style={styles.toSearchContainer}>
+              <View style={styles.toSearchInputContainer}>
+                <View style={styles.toLocationInfo}>
+                  <Text style={styles.toLabel}>To</Text>
+                  <View style={styles.toInputRow}>
+                    <TextInput
+                      style={styles.toSearchInput}
+                      placeholder="Search parking spots, restaurants, cafes, shops..."
+                      placeholderTextColor={colors.placeholder}
+                      value={searchQuery}
+                      onChangeText={handleToSearchQueryChange}
+                      autoCapitalize="words"
+                      autoCorrect={false}
+                    />
+                    {searchQuery.length > 0 && (
+                      <TouchableOpacity
+                        style={styles.clearToSearchButton}
+                        onPress={() => {
+                          setSearchQuery('');
+                          setPOIResults([]);
+                          setSearchType('parking');
+                        }}
+                      >
+                        <Text style={styles.clearSearchText}>✕</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+                {speechSupported && (
+                  <TouchableOpacity
+                    style={[styles.toSpeechButton, isListeningTo && styles.toSpeechButtonActive]}
+                    onPress={toggleToSpeechRecognition}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.micIcon}>
+                      <View style={[styles.micBody, isListeningTo && styles.micBodyActive]} />
+                      <View style={[styles.micStand, isListeningTo && styles.micStandActive]} />
+                      <View style={[styles.micBase, isListeningTo && styles.micBaseActive]} />
+                    </View>
+                  </TouchableOpacity>
+                )}
+              </View>
+              {isListeningTo && (
                 <TouchableOpacity
-                  style={styles.clearSearchButton}
-                  onPress={() => {
-                    setSearchQuery('');
-                    setPOIResults([]);
-                    setSearchType('parking');
-                  }}
+                  style={styles.listeningIndicator}
+                  onPress={toggleToSpeechRecognition}
+                  activeOpacity={0.8}
                 >
-                  <Text style={styles.clearSearchText}>✕</Text>
+                  <View style={styles.listeningContent}>
+                    <View style={styles.pulsingDot} />
+                    <Text style={styles.listeningText}>Listening... Speak now (tap to stop)</Text>
+                  </View>
                 </TouchableOpacity>
               )}
             </View>
-            {speechSupported && (
-              <TouchableOpacity
-                style={[styles.speechButton, isListening && styles.speechButtonActive]}
-                onPress={toggleSpeechRecognition}
-                activeOpacity={0.7}
-              >
-                <View style={styles.micIcon}>
-                  <View style={[styles.micBody, isListening && styles.micBodyActive]} />
-                  <View style={[styles.micStand, isListening && styles.micStandActive]} />
-                  <View style={[styles.micBase, isListening && styles.micBaseActive]} />
-                </View>
-              </TouchableOpacity>
-            )}
-            {isListening && (
-              <TouchableOpacity
-                style={styles.listeningIndicator}
-                onPress={toggleSpeechRecognition}
-                activeOpacity={0.8}
-              >
-                <View style={styles.listeningContent}>
-                  <View style={styles.pulsingDot} />
-                  <Text style={styles.listeningText}>Listening... Speak now (tap to stop)</Text>
-                </View>
-              </TouchableOpacity>
-            )}
-          </View>
+
+
 
           {/* Filters and Sort Container */}
           <View style={styles.filtersContainer}>
@@ -2548,10 +2544,10 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
                 label="Sort"
                 value={sortType}
                 options={[
-                  { key: 'availability', label: 'Available First' },
-                  { key: 'name', label: 'By Name' },
-                  { key: 'recent', label: 'Recently Updated' },
-                  { key: 'distance', label: 'By Distance' }
+                  { key: 'availability', label: 'Availability' },
+                  { key: 'name', label: 'Name' },
+                  { key: 'recent', label: 'Recents' },
+                  { key: 'distance', label: 'Distance' }
                 ]}
                 onSelect={(key) => setSortType(key as any)}
                 isOpen={showSortDropdown}
@@ -3784,5 +3780,74 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
     fontSize: 11,
     color: '#7f8c8d',
     fontStyle: 'italic',
+  },
+  // "To" search box styles (matching UserLocationDisplay styling)
+  toSearchContainer: {
+    backgroundColor: colors.backgroundSecondary,
+    marginBottom: 6,
+    borderRadius: 8,
+    shadowColor: colors.shadow,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  toSearchInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 8,
+  },
+  toLocationInfo: {
+    flex: 1,
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+    justifyContent: 'center',
+  },
+  toLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 4,
+    opacity: 0.7,
+  },
+  toInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  toSearchInput: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.text,
+    letterSpacing: 0.1,
+    lineHeight: 20,
+    paddingVertical: 0,
+  },
+  clearToSearchButton: {
+    padding: 4,
+    marginLeft: 8,
+  },
+  toSpeechButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    marginLeft: 12,
+    borderRadius: 8,
+    backgroundColor: colors.inputBackground,
+    borderWidth: 1,
+    borderColor: colors.inputBorder,
+    minWidth: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: colors.shadow,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  toSpeechButtonActive: {
+    backgroundColor: colors.buttonPrimary,
+    borderColor: colors.buttonPrimary,
   },
 });
