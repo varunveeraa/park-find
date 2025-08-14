@@ -3081,51 +3081,7 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
           </View>
         </View>
 
-
-
         <View style={styles.sensorListContainer}>
-          <View style={styles.listHeader}>
-            {/* Main Title Section */}
-            <View style={styles.titleSection}>
-              <View style={styles.titleWithIcon}>
-                <View style={styles.parkingIcon}>
-                  <Text style={styles.parkingIconText}>P</Text>
-                </View>
-                <Text style={styles.sensorListTitle}>
-                  {searchQuery.trim() ? 'Search Results' : 'Parking Spots'}
-                </Text>
-              </View>
-              <TouchableOpacity onPress={handleManualRefresh} activeOpacity={0.7}>
-                <Text style={styles.lastUpdateText}>
-                  ↻ {lastRefresh.toLocaleTimeString()}
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Stats Section */}
-            <View style={styles.statsSection}>
-              <View style={styles.statItem}>
-                <Text style={styles.statNumber}>
-                  {filteredAndSortedMarkers.filter(m => !m.isOccupied).length}
-                </Text>
-                <Text style={styles.statLabel}>Available</Text>
-              </View>
-              <View style={styles.statDivider} />
-              <View style={styles.statItem}>
-                <Text style={styles.statNumber}>
-                  {filteredAndSortedMarkers.length}
-                </Text>
-                <Text style={styles.statLabel}>Total Spots</Text>
-              </View>
-              <View style={styles.statDivider} />
-              <View style={styles.statItem}>
-                <Text style={styles.statNumber}>
-                  {Math.round((filteredAndSortedMarkers.filter(m => !m.isOccupied).length / Math.max(filteredAndSortedMarkers.length, 1)) * 100)}%
-                </Text>
-                <Text style={styles.statLabel}>Available</Text>
-              </View>
-            </View>
-
             {searchQuery.trim() && (
               <View style={styles.searchResultsBanner}>
                 <Text style={styles.searchResultsText}>
@@ -3141,7 +3097,6 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
                 )}
               </View>
             )}
-          </View>
 
           {/* Utility Controls Container */}
           <View style={styles.utilityControlsContainer}>
@@ -3742,7 +3697,9 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
 
   sensorListContainer: {
     flex: 1,
-    padding: 6,
+    paddingHorizontal: 6,
+    paddingTop: 2,
+    paddingBottom: 6,
     backgroundColor: colors.backgroundSecondary,
     minHeight: 0, // Important for ScrollView in flex container
     position: 'relative',
@@ -3762,81 +3719,9 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
     elevation: 3,
     overflow: 'visible',
   },
-  listHeader: {
-    backgroundColor: colors.cardBackground,
-    marginHorizontal: 6,
-    marginBottom: 6,
-    borderRadius: 8,
-    padding: 6,
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  titleSection: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  titleWithIcon: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  parkingIcon: {
-    backgroundColor: colors.buttonPrimary,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 10,
-    shadowColor: colors.buttonPrimary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  parkingIconText: {
-    color: colors.buttonText,
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  statsSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-around',
-    backgroundColor: colors.backgroundSecondary,
-    borderRadius: 8,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    marginBottom: 6,
-  },
-  statItem: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  statNumber: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: colors.text,
-    marginBottom: 1,
-  },
-  statLabel: {
-    fontSize: 10,
-    color: colors.textSecondary,
-    fontWeight: '500',
-    textTransform: 'uppercase',
-    letterSpacing: 0.3,
-  },
-  statDivider: {
-    width: 1,
-    height: 20,
-    backgroundColor: colors.border,
-    marginHorizontal: 6,
-  },
+
+
+
   searchResultsBanner: {
     backgroundColor: colors.info,
     borderRadius: 8,
@@ -4146,23 +4031,7 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
   },
-  sensorListTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: colors.text,
-    letterSpacing: 0.3,
-  },
-  lastUpdateText: {
-    fontSize: 12,
-    color: colors.buttonPrimary,
-    fontWeight: '600',
-    opacity: 0.9,
-    backgroundColor: colors.buttonPrimary + '15',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
+
   searchResultsText: {
     fontSize: 12,
     color: colors.buttonText,
