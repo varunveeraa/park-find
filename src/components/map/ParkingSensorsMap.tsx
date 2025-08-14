@@ -3,8 +3,10 @@ import { FavoriteNameModal } from '@/src/components/favorites/FavoriteNameModal'
 import * as Location from 'expo-location';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, AppState, Dimensions, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { IconSymbol } from '../../../components/ui/IconSymbol';
 import { useTheme } from '../../contexts/ThemeContext';
 import { googlePlacesApi, PlaceResult } from '../../services/api/googlePlacesApi';
+import { parkingEnhancementService } from '../../services/api/parkingEnhancementService';
 import { parkingSensorsApi } from '../../services/api/parkingSensorsApi';
 import FavoritesService, { favoritesService } from '../../services/database/favoritesService';
 import { loggingService } from '../../services/database/loggingService';
@@ -75,6 +77,7 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
   const [showNameModal, setShowNameModal] = useState(false);
   const [pendingFavorite, setPendingFavorite] = useState<EnhancedParkingSensorMarker | null>(null);
+  const [pendingMapFavorite, setPendingMapFavorite] = useState<{markerId: string, name: string, lat: number, lng: number} | null>(null);
 
   // POI search state
   const [poiResults, setPOIResults] = useState<PlaceResult[]>([]);
@@ -116,7 +119,7 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
   const fetchParkingData = useCallback(async () => {
     try {
       setError(null);
-      
+
       // Calculate bounds from current region
       const bounds = {
         north: region.latitude + region.latitudeDelta / 2,
@@ -128,7 +131,20 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
       const response = await parkingSensorsApi.fetchMultiplePages(300);
       const parkingMarkers = await parkingSensorsApi.convertToEnhancedMarkers(response.results);
 
-      setMarkers(parkingMarkers);
+      // Enhance markers with AI predictions
+      console.log('Enhancing parking markers with AI predictions...');
+      console.log(`Found ${parkingMarkers.length} parking markers to enhance`);
+
+      const enhancedMarkers = await parkingEnhancementService.enhanceMarkersWithPredictions(
+        parkingMarkers,
+        0 // Default commute time, could be made configurable
+      );
+
+      console.log(`Enhanced markers result: ${enhancedMarkers.length} markers`);
+      const markersWithPredictions = enhancedMarkers.filter(m => m.prediction);
+      console.log(`Markers with predictions: ${markersWithPredictions.length}`);
+
+      setMarkers(enhancedMarkers);
       setLastRefresh(new Date());
     } catch (err) {
       const errorMessage = err && typeof err === 'object' && 'message' in err
@@ -392,31 +408,61 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
 
   // Handle saving favorite with custom name
   const handleSaveFavorite = useCallback(async (customName: string) => {
-    if (!pendingFavorite) return;
-
     try {
-      const favoriteInput = FavoritesService.markerToFavoriteInput(pendingFavorite);
-      if (customName.trim()) {
-        favoriteInput.customName = customName.trim();
+      if (pendingFavorite) {
+        // Handle list favorite
+        const favoriteInput = FavoritesService.markerToFavoriteInput(pendingFavorite);
+        if (customName.trim()) {
+          favoriteInput.customName = customName.trim();
+        }
+
+        await favoritesService.addFavorite(favoriteInput);
+        setSavedIds(prev => new Set(prev).add(pendingFavorite.id));
+
+        const displayName = customName.trim() || pendingFavorite.streetAddress || 'Parking spot';
+        Alert.alert('Saved', `"${displayName}" added to saved spots`);
+
+        setPendingFavorite(null);
+      } else if (pendingMapFavorite) {
+        // Handle map favorite
+        const { markerId, name, lat, lng } = pendingMapFavorite;
+        const marker = markersWithDistances.find(m => m.id === markerId);
+
+        if (!marker) {
+          Alert.alert('Error', 'Parking spot not found.');
+          return;
+        }
+
+        await favoritesService.addFavorite({
+          id: markerId,
+          customName: customName.trim() || name,
+          latitude: lat,
+          longitude: lng,
+          streetAddress: marker.streetAddress || name,
+          title: marker.title,
+          restriction: marker.currentRestriction || 'No restriction data',
+          isOccupied: marker.isOccupied,
+          zoneNumber: marker.zoneNumber?.toString() || marker.title
+        });
+
+        setSavedIds(prev => new Set(prev).add(markerId));
+
+        const displayName = customName.trim() || name;
+        Alert.alert('Saved', `"${displayName}" added to saved spots`);
+
+        setPendingMapFavorite(null);
       }
-
-      await favoritesService.addFavorite(favoriteInput);
-      setSavedIds(prev => new Set(prev).add(pendingFavorite.id));
-
-      const displayName = customName.trim() || pendingFavorite.streetAddress || 'Parking spot';
-      Alert.alert('Saved', `"${displayName}" added to saved spots`);
-
-      setPendingFavorite(null);
     } catch (error) {
       console.error('Error saving spot:', error);
       Alert.alert('Error', 'Failed to save spot');
     }
-  }, [pendingFavorite]);
+  }, [pendingFavorite, pendingMapFavorite, markersWithDistances]);
 
   // Handle modal close
   const handleModalClose = useCallback(() => {
     setShowNameModal(false);
     setPendingFavorite(null);
+    setPendingMapFavorite(null);
   }, []);
 
   // Check speech recognition support
@@ -956,6 +1002,8 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
     };
   }, []);
 
+
+
   const generateMapHTML = useCallback(() => {
     const markersData = markersWithDistances.map(marker => ({
       id: marker.id,
@@ -1103,33 +1151,7 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
           body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
           #map { height: 100vh; width: 100%; }
 
-          /* Location button styling */
-          .location-btn {
-            position: absolute;
-            bottom: 20px;
-            right: 20px;
-            background: #4285F4;
-            color: white;
-            border: none;
-            padding: 12px;
-            border-radius: 50%;
-            cursor: pointer;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
-            z-index: 1000;
-            width: 48px;
-            height: 48px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 18px;
-          }
-          .location-btn:hover {
-            background: #3367d6;
-          }
-          .location-btn:disabled {
-            background: #ccc;
-            cursor: not-allowed;
-          }
+
 
           /* Compact popup styling */
           .custom-info-window {
@@ -1414,11 +1436,6 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
 
         <div id="map"></div>
 
-        <!-- Location button -->
-        <button class="location-btn" id="locationBtn" onclick="centerOnUserLocation()" title="Center on my location">
-          📍
-        </button>
-
         <script>
           let map;
           let infoWindow;
@@ -1451,7 +1468,18 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
               map = new google.maps.Map(document.getElementById("map"), {
                 zoom: 13, // Will be adjusted after markers are added
                 center: markersBounds.center,
-                styles: mapStyles
+                styles: mapStyles,
+                // Enable Google Maps' built-in location control
+                disableDefaultUI: false,
+                zoomControl: true,
+                mapTypeControl: false,
+                scaleControl: true,
+                streetViewControl: true,
+                rotateControl: false,
+                fullscreenControl: true,
+                // Enable the native "My Location" button
+                clickableIcons: true,
+                gestureHandling: 'auto'
               });
               console.log('Map created successfully with styles:', mapStyles.length, 'rules');
             } catch (error) {
@@ -1460,7 +1488,17 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
               try {
                 map = new google.maps.Map(document.getElementById("map"), {
                   zoom: 13,
-                  center: markersBounds.center
+                  center: markersBounds.center,
+                  // Enable Google Maps' built-in location control (fallback)
+                  disableDefaultUI: false,
+                  zoomControl: true,
+                  mapTypeControl: false,
+                  scaleControl: true,
+                  streetViewControl: true,
+                  rotateControl: false,
+                  fullscreenControl: true,
+                  clickableIcons: true,
+                  gestureHandling: 'auto'
                 });
                 console.log('Map created successfully without styles');
               } catch (fallbackError) {
@@ -1472,6 +1510,12 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
 
             // Create info window
             infoWindow = new google.maps.InfoWindow();
+
+            // Add custom location control using Google Maps' control system
+            const locationControlDiv = document.createElement('div');
+            const locationControl = createLocationControl(locationControlDiv, map);
+            locationControlDiv.index = 1;
+            map.controls[google.maps.ControlPosition.RIGHT_BOTTOM].push(locationControlDiv);
 
             console.log('Map created successfully');
             document.getElementById('status').textContent = 'Adding markers...';
@@ -1616,36 +1660,326 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
                   </div>
                 \`;
               } else {
-                // Parking info window
+                // Parking info window - use the same card design as the list
+                const isDarkMode = ${JSON.stringify(colorScheme === 'dark')};
+                const themeColors = isDarkMode ? {
+                  cardBackground: '#1e1e1e',
+                  text: '#ffffff',
+                  textSecondary: '#b0b0b0',
+                  border: '#333333',
+                  backgroundSecondary: '#2a2a2a',
+                  available: '#4CAF50',
+                  occupied: '#F44336',
+                  info: '#2196F3',
+                  success: '#4CAF50',
+                  warning: '#FF9800'
+                } : {
+                  cardBackground: '#ffffff',
+                  text: '#000000',
+                  textSecondary: '#666666',
+                  border: '#e0e0e0',
+                  backgroundSecondary: '#f5f5f5',
+                  available: '#4CAF50',
+                  occupied: '#F44336',
+                  info: '#2196F3',
+                  success: '#4CAF50',
+                  warning: '#FF9800'
+                };
+
+                const isPOI = markerData.type === 'poi';
+                const isOccupied = markerData.isOccupied;
+                const statusColor = isOccupied ? themeColors.occupied : themeColors.available;
+                const statusText = isOccupied ? 'OCCUPIED' : 'AVAILABLE';
+
                 infoContent = \`
-                  <div class="custom-info-window">
-                    <div class="popup-header">
-                      <h4 class="popup-title">
-                        <span>🅿️</span>
-                        <span>\${markerData.title}</span>
-                      </h4>
+                  <div style="
+                    background-color: \${themeColors.cardBackground};
+                    border-radius: 8px;
+                    padding: 8px 12px;
+                    margin: 0;
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+                    border: 1px solid \${themeColors.border};
+                    border-left: 3px solid \${statusColor};
+                    min-width: 320px;
+                    max-width: 380px;
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                    color: \${themeColors.text};
+                  ">
+                    <!-- Header Section -->
+                    <div style="
+                      display: flex;
+                      justify-content: space-between;
+                      align-items: flex-start;
+                      margin-bottom: 10px;
+                      min-height: 40px;
+                    ">
+                      <div style="flex: 1;">
+                        <h3 style="
+                          font-size: 16px;
+                          font-weight: bold;
+                          color: \${themeColors.text};
+                          line-height: 20px;
+                          margin: 0 0 2px 0;
+                        ">\${markerData.streetAddress ?
+                            markerData.streetAddress.split(' (')[0] :
+                            \`Zone \${markerData.title}\`}</h3>
+                      </div>
+                      <div style="
+                        background-color: \${statusColor};
+                        color: white;
+                        padding: 4px 8px;
+                        border-radius: 12px;
+                        font-size: 11px;
+                        font-weight: 600;
+                        margin-left: 8px;
+                        white-space: nowrap;
+                      ">
+                        \${statusText}
+                      </div>
                     </div>
-                    <div class="popup-content">
-                      <div class="status-badge \${markerData.isOccupied ? 'status-occupied' : 'status-available'}">
-                        <span>\${markerData.isOccupied ? '❌' : '✅'}</span>
-                        <span>\${markerData.isOccupied ? 'Occupied' : 'Available'}</span>
-                      </div>
 
-                      <div class="info-row">
-                        <div class="info-label">Location</div>
-                        <div class="info-text">\${markerData.streetAddress}</div>
+                    <!-- Distance and Drive Time Boxes -->
+                    <div style="
+                      display: flex;
+                      gap: 8px;
+                      margin-top: 2px;
+                    ">
+                      <div style="
+                        flex: 1;
+                        display: flex;
+                        align-items: center;
+                        background-color: \${themeColors.backgroundSecondary};
+                        border-radius: 6px;
+                        padding: 8px;
+                        border: 1px solid \${themeColors.border};
+                      ">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="\${themeColors.info}" style="margin-right: 6px;">
+                          <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+                        </svg>
+                        <div style="flex: 1;">
+                          <div style="
+                            font-size: 13px;
+                            font-weight: 700;
+                            color: \${themeColors.text};
+                            line-height: 16px;
+                          ">~0.5km</div>
+                          <div style="
+                            font-size: 10px;
+                            font-weight: 500;
+                            color: \${themeColors.textSecondary};
+                            text-transform: uppercase;
+                            letter-spacing: 0.5px;
+                          ">DISTANCE</div>
+                        </div>
                       </div>
-
-                      <div class="info-row">
-                        <div class="info-label">Rules</div>
-                        <div class="info-text">\${markerData.restriction.replace(/Location:.*?\\\\n/g, '').replace(/Status:.*?\\\\n/g, '').replace(/Last updated:.*$/g, '').trim()}</div>
+                      <div style="
+                        flex: 1;
+                        display: flex;
+                        align-items: center;
+                        background-color: \${themeColors.backgroundSecondary};
+                        border-radius: 6px;
+                        padding: 8px;
+                        border: 1px solid \${themeColors.border};
+                      ">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="\${themeColors.info}" style="margin-right: 6px;">
+                          <path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.22.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z"/>
+                        </svg>
+                        <div style="flex: 1;">
+                          <div style="
+                            font-size: 13px;
+                            font-weight: 700;
+                            color: \${themeColors.text};
+                            line-height: 16px;
+                          ">~2 mins</div>
+                          <div style="
+                            font-size: 10px;
+                            font-weight: 500;
+                            color: \${themeColors.textSecondary};
+                            text-transform: uppercase;
+                            letter-spacing: 0.5px;
+                          ">DRIVE TIME</div>
+                        </div>
                       </div>
+                    </div>
 
-                      <a href="\${googleMapsUrl}" target="_blank" rel="noopener noreferrer" class="directions-btn">
-                        🧭 Directions
+                    <!-- Restriction Section -->
+                    <div style="margin-bottom: 4px;">
+                      <div style="
+                        background-color: \${themeColors.backgroundSecondary};
+                        border-radius: 8px;
+                        padding: 12px;
+                        margin-top: 4px;
+                        border: 1px solid \${themeColors.border};
+                      ">
+                        <div style="
+                          display: flex;
+                          align-items: center;
+                          justify-content: space-between;
+                          gap: 16px;
+                        ">
+                          <div style="
+                            flex: 1;
+                            display: flex;
+                            flex-direction: column;
+                            align-items: center;
+                            padding: 0 8px;
+                          ">
+                            <div style="
+                              font-size: 10px;
+                              font-weight: 600;
+                              color: \${themeColors.textSecondary};
+                              text-transform: uppercase;
+                              letter-spacing: 0.3px;
+                              margin-bottom: 1px;
+                            ">LIMIT</div>
+                            <div style="
+                              font-size: 12px;
+                              font-weight: 700;
+                              color: \${themeColors.text};
+                              text-align: center;
+                            ">2P</div>
+                          </div>
+                          <div style="
+                            width: 1px;
+                            height: 24px;
+                            background-color: \${themeColors.border};
+                          "></div>
+                          <div style="
+                            flex: 1.5;
+                            display: flex;
+                            flex-direction: column;
+                            align-items: center;
+                            padding: 0 8px;
+                          ">
+                            <div style="
+                              font-size: 10px;
+                              font-weight: 600;
+                              color: \${themeColors.textSecondary};
+                              text-transform: uppercase;
+                              letter-spacing: 0.3px;
+                              margin-bottom: 1px;
+                            ">HOURS</div>
+                            <div style="
+                              font-size: 12px;
+                              font-weight: 700;
+                              color: \${themeColors.text};
+                              text-align: center;
+                            ">9AM-5PM</div>
+                          </div>
+                          <div style="
+                            width: 1px;
+                            height: 24px;
+                            background-color: \${themeColors.border};
+                          "></div>
+                          <div style="
+                            flex: 1.5;
+                            display: flex;
+                            flex-direction: column;
+                            align-items: center;
+                            padding: 0 8px;
+                          ">
+                            <div style="
+                              font-size: 10px;
+                              font-weight: 600;
+                              color: \${themeColors.textSecondary};
+                              text-transform: uppercase;
+                              letter-spacing: 0.3px;
+                              margin-bottom: 1px;
+                            ">DAYS</div>
+                            <div style="
+                              font-size: 12px;
+                              font-weight: 700;
+                              color: \${themeColors.text};
+                              text-align: center;
+                            ">Mon-Fri</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Actions Row -->
+                    <div style="
+                      display: flex;
+                      justify-content: space-between;
+                      align-items: center;
+                      margin-top: 6px;
+                      gap: 8px;
+                    ">
+                      <!-- Directions Button -->
+                      <a href="https://www.google.com/maps/dir/?api=1&destination=\${markerData.lat},\${markerData.lng}"
+                         target="_blank"
+                         rel="noopener noreferrer"
+                         style="
+                           display: flex;
+                           align-items: center;
+                           background-color: \${themeColors.info};
+                           color: white;
+                           padding: 8px 12px;
+                           border-radius: 6px;
+                           text-decoration: none;
+                           font-size: 12px;
+                           font-weight: 600;
+                           gap: 4px;
+                           transition: background-color 0.2s ease;
+                           flex: 1;
+                           justify-content: center;
+                         "
+                         onmouseover="this.style.backgroundColor='\${isDarkMode ? '#1976D2' : '#1976D2'}'"
+                         onmouseout="this.style.backgroundColor='\${themeColors.info}'">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="white">
+                          <path d="M12 2L13.09 8.26L22 9L13.09 9.74L12 16L10.91 9.74L2 9L10.91 8.26L12 2Z"/>
+                        </svg>
+                        Directions
                       </a>
 
-                      <div class="last-updated">\${new Date().toLocaleTimeString()}</div>
+                      <!-- Save Button -->
+                      <button onclick="toggleSaveLocation('\${markerData.id}', '\${markerData.streetAddress ? markerData.streetAddress.split(' (')[0] : 'Zone ' + markerData.title}', \${markerData.lat}, \${markerData.lng})"
+                              style="
+                                display: flex;
+                                align-items: center;
+                                justify-content: center;
+                                background-color: \${themeColors.backgroundSecondary};
+                                border: 1px solid \${themeColors.border};
+                                padding: 8px;
+                                border-radius: 6px;
+                                cursor: pointer;
+                                transition: background-color 0.2s ease;
+                                width: 40px;
+                                height: 36px;
+                              "
+                              onmouseover="this.style.backgroundColor='\${isDarkMode ? '#333333' : '#e0e0e0'}'"
+                              onmouseout="this.style.backgroundColor='\${themeColors.backgroundSecondary}'">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="\${themeColors.textSecondary}" id="save-icon-\${markerData.id}">
+                          <path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2zm0 15l-5-2.18L7 18V5h10v13z"/>
+                        </svg>
+                      </button>
+                    </div>
+
+                    <!-- Bottom Row -->
+                    <div style="
+                      display: flex;
+                      justify-content: space-between;
+                      align-items: center;
+                      margin-top: 4px;
+                      padding-top: 6px;
+                      border-top: 1px solid \${themeColors.border};
+                    ">
+                      <span style="
+                        font-size: 11px;
+                        color: \${themeColors.textSecondary};
+                        font-style: italic;
+                        flex: 1;
+                      ">
+                        \${markerData.streetAddress && markerData.streetAddress.includes('(') ?
+                          markerData.streetAddress.split('(')[1]?.replace(')', '') || '' : ''}
+                      </span>
+                      <span style="
+                        font-size: 9px;
+                        color: \${themeColors.textSecondary};
+                        font-style: italic;
+                        text-align: right;
+                        margin-left: 8px;
+                      ">👆 Tap to view on map</span>
                     </div>
                   </div>
                 \`;
@@ -1762,11 +2096,7 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
               }
             }
 
-            // Update location button visibility
-            const locationBtn = document.getElementById('locationBtn');
-            if (locationBtn) {
-              locationBtn.style.display = userLocationData ? 'flex' : 'none';
-            }
+
 
             // Hide status message and show success
             setTimeout(() => {
@@ -1780,59 +2110,95 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
             }, 500);
           }
 
-          // Function to center map on user location
-          function centerOnUserLocation() {
-            const userLocationData = ${JSON.stringify(userLocationData)};
-            if (userLocationData && map) {
-              // Smooth pan to user location
-              map.panTo({ lat: userLocationData.lat, lng: userLocationData.lng });
+          // Create a custom location control that matches Google Maps style
+          function createLocationControl(controlDiv, map) {
+            // Set CSS for the control border
+            const controlUI = document.createElement('div');
+            controlUI.style.backgroundColor = '#fff';
+            controlUI.style.border = '2px solid #fff';
+            controlUI.style.borderRadius = '3px';
+            controlUI.style.boxShadow = '0 2px 6px rgba(0,0,0,.3)';
+            controlUI.style.cursor = 'pointer';
+            controlUI.style.marginBottom = '22px';
+            controlUI.style.marginRight = '10px';
+            controlUI.style.textAlign = 'center';
+            controlUI.title = 'Click to center map on your location';
+            controlDiv.appendChild(controlUI);
 
-              // Smooth zoom animation
-              const currentZoom = map.getZoom() || 13;
-              const targetZoom = 16;
-              const zoomStep = (targetZoom - currentZoom) / 8;
+            // Set CSS for the control interior
+            const controlText = document.createElement('div');
+            controlText.style.color = 'rgb(25,25,25)';
+            controlText.style.fontFamily = 'Roboto,Arial,sans-serif';
+            controlText.style.fontSize = '16px';
+            controlText.style.lineHeight = '38px';
+            controlText.style.paddingLeft = '5px';
+            controlText.style.paddingRight = '5px';
+            controlText.innerHTML = '📍';
+            controlUI.appendChild(controlText);
 
-              let step = 0;
-              const zoomInterval = setInterval(() => {
-                step++;
-                const newZoom = currentZoom + (zoomStep * step);
-                map.setZoom(newZoom);
+            // Setup the click event listener
+            controlUI.addEventListener('click', () => {
+              const userLocationData = ${JSON.stringify(userLocationData)};
+              if (userLocationData && map) {
+                // Center map on user location with smooth animation
+                map.panTo({ lat: userLocationData.lat, lng: userLocationData.lng });
+                map.setZoom(16);
 
-                if (step >= 8) {
-                  clearInterval(zoomInterval);
-                  map.setZoom(targetZoom);
-                }
-              }, 60);
-
-              // Open user location info window if marker exists
-              if (userLocationMarker && infoWindow) {
-                const userInfoContent = \`
-                  <div class="custom-info-window">
-                    <div class="popup-header">
-                      <h4 class="popup-title">
-                        <span class="popup-title-icon">📍</span>
-                        <span>Your Location</span>
-                      </h4>
-                    </div>
-                    <div class="popup-content">
-                      <div class="info-card">
-                        <div class="info-row">
-                          <span class="info-icon">🎯</span>
-                          <span class="info-text">Accuracy: ±\${Math.round(userLocationData.accuracy || 50)} meters</span>
+                // Show user location info if marker exists
+                if (userLocationMarker && infoWindow) {
+                  const userInfoContent = \`
+                    <div style="
+                      background-color: #ffffff;
+                      border-radius: 8px;
+                      padding: 12px;
+                      margin: 0;
+                      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+                      border: 1px solid #e0e0e0;
+                      border-left: 3px solid #2196F3;
+                      min-width: 250px;
+                      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                      color: #000000;
+                    ">
+                      <div style="
+                        display: flex;
+                        align-items: center;
+                        margin-bottom: 8px;
+                      ">
+                        <span style="font-size: 16px; margin-right: 8px;">📍</span>
+                        <h3 style="
+                          font-size: 16px;
+                          font-weight: bold;
+                          margin: 0;
+                          color: #000000;
+                        ">Your Location</h3>
+                      </div>
+                      <div style="
+                        background-color: #f5f5f5;
+                        border-radius: 6px;
+                        padding: 8px;
+                        margin-bottom: 8px;
+                      ">
+                        <div style="font-size: 12px; color: #666666; margin-bottom: 4px;">
+                          🎯 Accuracy: ±\${Math.round(userLocationData.accuracy || 50)} meters
                         </div>
-                        <div class="info-row">
-                          <span class="info-icon">🌐</span>
-                          <span class="info-text">\${userLocationData.lat.toFixed(6)}, \${userLocationData.lng.toFixed(6)}</span>
+                        <div style="font-size: 11px; color: #888888; font-family: monospace;">
+                          \${userLocationData.lat.toFixed(6)}, \${userLocationData.lng.toFixed(6)}
                         </div>
                       </div>
                     </div>
-                  </div>
-                \`;
-                infoWindow.setContent(userInfoContent);
-                infoWindow.open(map, userLocationMarker);
+                  \`;
+                  infoWindow.setContent(userInfoContent);
+                  infoWindow.open(map, userLocationMarker);
+                }
+              } else {
+                alert('Location not available. Please enable location services.');
               }
-            }
+            });
+
+            return controlUI;
           }
+
+
 
           // Listen for messages from parent
           window.addEventListener('message', function(event) {
@@ -1982,36 +2348,326 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
                           </div>
                         \`;
                       } else {
-                        // Parking info window
+                        // Parking info window - use the same card design as direct map clicks
+                        const isDarkMode = ${JSON.stringify(colorScheme === 'dark')};
+                        const themeColors = isDarkMode ? {
+                          cardBackground: '#1e1e1e',
+                          text: '#ffffff',
+                          textSecondary: '#b0b0b0',
+                          border: '#333333',
+                          backgroundSecondary: '#2a2a2a',
+                          available: '#4CAF50',
+                          occupied: '#F44336',
+                          info: '#2196F3',
+                          success: '#4CAF50',
+                          warning: '#FF9800'
+                        } : {
+                          cardBackground: '#ffffff',
+                          text: '#000000',
+                          textSecondary: '#666666',
+                          border: '#e0e0e0',
+                          backgroundSecondary: '#f5f5f5',
+                          available: '#4CAF50',
+                          occupied: '#F44336',
+                          info: '#2196F3',
+                          success: '#4CAF50',
+                          warning: '#FF9800'
+                        };
+
+                        const isPOI = markerData.type === 'poi';
+                        const isOccupied = markerData.isOccupied;
+                        const statusColor = isOccupied ? themeColors.occupied : themeColors.available;
+                        const statusText = isOccupied ? 'OCCUPIED' : 'AVAILABLE';
+
                         infoContent = \`
-                          <div class="custom-info-window">
-                            <div class="popup-header">
-                              <h4 class="popup-title">
-                                <span>🅿️</span>
-                                <span>\${markerData.title}</span>
-                              </h4>
+                          <div style="
+                            background-color: \${themeColors.cardBackground};
+                            border-radius: 8px;
+                            padding: 8px 12px;
+                            margin: 0;
+                            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+                            border: 1px solid \${themeColors.border};
+                            border-left: 3px solid \${statusColor};
+                            min-width: 320px;
+                            max-width: 380px;
+                            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                            color: \${themeColors.text};
+                          ">
+                            <!-- Header Section -->
+                            <div style="
+                              display: flex;
+                              justify-content: space-between;
+                              align-items: flex-start;
+                              margin-bottom: 10px;
+                              min-height: 40px;
+                            ">
+                              <div style="flex: 1;">
+                                <h3 style="
+                                  font-size: 16px;
+                                  font-weight: bold;
+                                  color: \${themeColors.text};
+                                  line-height: 20px;
+                                  margin: 0 0 2px 0;
+                                ">\${markerData.streetAddress ?
+                                    markerData.streetAddress.split(' (')[0] :
+                                    \`Zone \${markerData.title}\`}</h3>
+                              </div>
+                              <div style="
+                                background-color: \${statusColor};
+                                color: white;
+                                padding: 4px 8px;
+                                border-radius: 12px;
+                                font-size: 11px;
+                                font-weight: 600;
+                                margin-left: 8px;
+                                white-space: nowrap;
+                              ">
+                                \${statusText}
+                              </div>
                             </div>
-                            <div class="popup-content">
-                              <div class="status-badge \${markerData.isOccupied ? 'status-occupied' : 'status-available'}">
-                                <span>\${markerData.isOccupied ? '❌' : '✅'}</span>
-                                <span>\${markerData.isOccupied ? 'Occupied' : 'Available'}</span>
-                              </div>
 
-                              <div class="info-row">
-                                <div class="info-label">Location</div>
-                                <div class="info-text">\${markerData.streetAddress}</div>
+                            <!-- Distance and Drive Time Boxes -->
+                            <div style="
+                              display: flex;
+                              gap: 8px;
+                              margin-top: 2px;
+                            ">
+                              <div style="
+                                flex: 1;
+                                display: flex;
+                                align-items: center;
+                                background-color: \${themeColors.backgroundSecondary};
+                                border-radius: 6px;
+                                padding: 8px;
+                                border: 1px solid \${themeColors.border};
+                              ">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="\${themeColors.info}" style="margin-right: 6px;">
+                                  <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+                                </svg>
+                                <div style="flex: 1;">
+                                  <div style="
+                                    font-size: 13px;
+                                    font-weight: 700;
+                                    color: \${themeColors.text};
+                                    line-height: 16px;
+                                  ">~0.5km</div>
+                                  <div style="
+                                    font-size: 10px;
+                                    font-weight: 500;
+                                    color: \${themeColors.textSecondary};
+                                    text-transform: uppercase;
+                                    letter-spacing: 0.5px;
+                                  ">DISTANCE</div>
+                                </div>
                               </div>
-
-                              <div class="info-row">
-                                <div class="info-label">Rules</div>
-                                <div class="info-text">\${markerData.restriction.replace(/Location:.*?\\\\n/g, '').replace(/Status:.*?\\\\n/g, '').replace(/Last updated:.*$/g, '').trim()}</div>
+                              <div style="
+                                flex: 1;
+                                display: flex;
+                                align-items: center;
+                                background-color: \${themeColors.backgroundSecondary};
+                                border-radius: 6px;
+                                padding: 8px;
+                                border: 1px solid \${themeColors.border};
+                              ">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="\${themeColors.info}" style="margin-right: 6px;">
+                                  <path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.22.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z"/>
+                                </svg>
+                                <div style="flex: 1;">
+                                  <div style="
+                                    font-size: 13px;
+                                    font-weight: 700;
+                                    color: \${themeColors.text};
+                                    line-height: 16px;
+                                  ">~2 mins</div>
+                                  <div style="
+                                    font-size: 10px;
+                                    font-weight: 500;
+                                    color: \${themeColors.textSecondary};
+                                    text-transform: uppercase;
+                                    letter-spacing: 0.5px;
+                                  ">DRIVE TIME</div>
+                                </div>
                               </div>
+                            </div>
 
-                              <a href="\${googleMapsUrl}" target="_blank" rel="noopener noreferrer" class="directions-btn">
-                                🧭 Directions
+                            <!-- Restriction Section -->
+                            <div style="margin-bottom: 4px;">
+                              <div style="
+                                background-color: \${themeColors.backgroundSecondary};
+                                border-radius: 8px;
+                                padding: 12px;
+                                margin-top: 4px;
+                                border: 1px solid \${themeColors.border};
+                              ">
+                                <div style="
+                                  display: flex;
+                                  align-items: center;
+                                  justify-content: space-between;
+                                  gap: 16px;
+                                ">
+                                  <div style="
+                                    flex: 1;
+                                    display: flex;
+                                    flex-direction: column;
+                                    align-items: center;
+                                    padding: 0 8px;
+                                  ">
+                                    <div style="
+                                      font-size: 10px;
+                                      font-weight: 600;
+                                      color: \${themeColors.textSecondary};
+                                      text-transform: uppercase;
+                                      letter-spacing: 0.3px;
+                                      margin-bottom: 1px;
+                                    ">LIMIT</div>
+                                    <div style="
+                                      font-size: 12px;
+                                      font-weight: 700;
+                                      color: \${themeColors.text};
+                                      text-align: center;
+                                    ">2P</div>
+                                  </div>
+                                  <div style="
+                                    width: 1px;
+                                    height: 24px;
+                                    background-color: \${themeColors.border};
+                                  "></div>
+                                  <div style="
+                                    flex: 1.5;
+                                    display: flex;
+                                    flex-direction: column;
+                                    align-items: center;
+                                    padding: 0 8px;
+                                  ">
+                                    <div style="
+                                      font-size: 10px;
+                                      font-weight: 600;
+                                      color: \${themeColors.textSecondary};
+                                      text-transform: uppercase;
+                                      letter-spacing: 0.3px;
+                                      margin-bottom: 1px;
+                                    ">HOURS</div>
+                                    <div style="
+                                      font-size: 12px;
+                                      font-weight: 700;
+                                      color: \${themeColors.text};
+                                      text-align: center;
+                                    ">9AM-5PM</div>
+                                  </div>
+                                  <div style="
+                                    width: 1px;
+                                    height: 24px;
+                                    background-color: \${themeColors.border};
+                                  "></div>
+                                  <div style="
+                                    flex: 1.5;
+                                    display: flex;
+                                    flex-direction: column;
+                                    align-items: center;
+                                    padding: 0 8px;
+                                  ">
+                                    <div style="
+                                      font-size: 10px;
+                                      font-weight: 600;
+                                      color: \${themeColors.textSecondary};
+                                      text-transform: uppercase;
+                                      letter-spacing: 0.3px;
+                                      margin-bottom: 1px;
+                                    ">DAYS</div>
+                                    <div style="
+                                      font-size: 12px;
+                                      font-weight: 700;
+                                      color: \${themeColors.text};
+                                      text-align: center;
+                                    ">Mon-Fri</div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
+                            <!-- Actions Row -->
+                            <div style="
+                              display: flex;
+                              justify-content: space-between;
+                              align-items: center;
+                              margin-top: 6px;
+                              gap: 8px;
+                            ">
+                              <!-- Directions Button -->
+                              <a href="\${googleMapsUrl}"
+                                 target="_blank"
+                                 rel="noopener noreferrer"
+                                 style="
+                                   display: flex;
+                                   align-items: center;
+                                   background-color: \${themeColors.info};
+                                   color: white;
+                                   padding: 8px 12px;
+                                   border-radius: 6px;
+                                   text-decoration: none;
+                                   font-size: 12px;
+                                   font-weight: 600;
+                                   gap: 4px;
+                                   transition: background-color 0.2s ease;
+                                   flex: 1;
+                                   justify-content: center;
+                                 "
+                                 onmouseover="this.style.backgroundColor='\${isDarkMode ? '#1976D2' : '#1976D2'}'"
+                                 onmouseout="this.style.backgroundColor='\${themeColors.info}'">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="white">
+                                  <path d="M12 2L13.09 8.26L22 9L13.09 9.74L12 16L10.91 9.74L2 9L10.91 8.26L12 2Z"/>
+                                </svg>
+                                Directions
                               </a>
 
-                              <div class="last-updated">\${new Date().toLocaleTimeString()}</div>
+                              <!-- Save Button -->
+                              <button onclick="toggleSaveLocation('\${markerData.id}', '\${markerData.streetAddress ? markerData.streetAddress.split(' (')[0] : 'Zone ' + markerData.title}', \${markerData.lat}, \${markerData.lng})"
+                                      style="
+                                        display: flex;
+                                        align-items: center;
+                                        justify-content: center;
+                                        background-color: \${themeColors.backgroundSecondary};
+                                        border: 1px solid \${themeColors.border};
+                                        padding: 8px;
+                                        border-radius: 6px;
+                                        cursor: pointer;
+                                        transition: background-color 0.2s ease;
+                                        width: 40px;
+                                        height: 36px;
+                                      "
+                                      onmouseover="this.style.backgroundColor='\${isDarkMode ? '#333333' : '#e0e0e0'}'"
+                                      onmouseout="this.style.backgroundColor='\${themeColors.backgroundSecondary}'">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="\${themeColors.textSecondary}" id="save-icon-\${markerData.id}">
+                                  <path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2zm0 15l-5-2.18L7 18V5h10v13z"/>
+                                </svg>
+                              </button>
+                            </div>
+
+                            <!-- Bottom Row -->
+                            <div style="
+                              display: flex;
+                              justify-content: space-between;
+                              align-items: center;
+                              margin-top: 4px;
+                              padding-top: 6px;
+                              border-top: 1px solid \${themeColors.border};
+                            ">
+                              <span style="
+                                font-size: 11px;
+                                color: \${themeColors.textSecondary};
+                                font-style: italic;
+                                flex: 1;
+                              ">
+                                \${markerData.streetAddress && markerData.streetAddress.includes('(') ?
+                                  markerData.streetAddress.split('(')[1]?.replace(')', '') || '' : ''}
+                              </span>
+                              <span style="
+                                font-size: 9px;
+                                color: \${themeColors.textSecondary};
+                                font-style: italic;
+                                text-align: right;
+                                margin-left: 8px;
+                              ">👆 Tap to view on map</span>
                             </div>
                           </div>
                         \`;
@@ -2046,6 +2702,35 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
               lat: lat,
               lng: lng
             }, '*');
+          }
+
+          // Function to toggle save location for parking spots
+          function toggleSaveLocation(markerId, name, lat, lng) {
+            // Send message to parent to toggle save location
+            window.parent.postMessage({
+              type: 'TOGGLE_SAVE_LOCATION',
+              markerId: markerId,
+              name: name,
+              lat: lat,
+              lng: lng
+            }, '*');
+
+            // Update the icon visual feedback
+            const icon = document.getElementById('save-icon-' + markerId);
+            if (icon) {
+              // Toggle between filled and outline bookmark
+              const currentPath = icon.querySelector('path').getAttribute('d');
+              const outlinePath = 'M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2zm0 15l-5-2.18L7 18V5h10v13z';
+              const filledPath = 'M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z';
+
+              if (currentPath === outlinePath) {
+                icon.querySelector('path').setAttribute('d', filledPath);
+                icon.setAttribute('fill', '#4CAF50');
+              } else {
+                icon.querySelector('path').setAttribute('d', outlinePath);
+                icon.setAttribute('fill', '${isDarkMode ? '#b0b0b0' : '#666666'}');
+              }
+            }
           }
 
           // Function to select parking spot from POI popup
@@ -2202,7 +2887,6 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
 
           // Make functions globally available
           window.initMap = initMap;
-          window.centerOnUserLocation = centerOnUserLocation;
           window.savePOI = savePOI;
           window.searchPOIInMap = searchPOIInMap;
         </script>
@@ -2271,6 +2955,34 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
     }
   }, [selectedMarker, mapHtml]);
 
+  // Function to toggle save location for parking spots
+  const toggleSaveLocation = useCallback(async (markerId: string, name: string, lat: number, lng: number) => {
+    try {
+      // Find the marker to get full details
+      const marker = markersWithDistances.find(m => m.id === markerId);
+      if (!marker) {
+        Alert.alert('Error', 'Parking spot not found.');
+        return;
+      }
+
+      // Check if it's already saved
+      const isSaved = await favoritesService.isFavorite(markerId);
+
+      if (isSaved) {
+        // Remove from favorites
+        await favoritesService.removeFavorite(markerId);
+        Alert.alert('Removed!', `${name} has been removed from your favorites.`);
+      } else {
+        // Show modal to get custom name (same as list behavior)
+        setPendingMapFavorite({ markerId, name, lat, lng });
+        setShowNameModal(true);
+      }
+    } catch (error) {
+      console.error('Error toggling save location:', error);
+      Alert.alert('Error', 'Failed to save location. Please try again.');
+    }
+  }, [markersWithDistances]);
+
   // Handle messages from map iframe
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -2278,6 +2990,10 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
         const { poiId, name, lat, lng } = event.data;
         // Save POI as favorite
         savePOIAsFavorite(poiId, name, lat, lng);
+      } else if (event.data.type === 'TOGGLE_SAVE_LOCATION') {
+        const { markerId, name, lat, lng } = event.data;
+        // Toggle save location for parking spot
+        toggleSaveLocation(markerId, name, lat, lng);
       } else if (event.data.type === 'SELECT_PARKING_FROM_POI') {
         const { parkingId } = event.data;
         // Find and select the parking spot in the list
@@ -2305,7 +3021,7 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [markersWithDistances]);
+  }, [markersWithDistances, toggleSaveLocation]);
 
   // Function to save POI as favorite
   const savePOIAsFavorite = async (poiId: string, name: string, lat: number, lng: number) => {
@@ -2604,38 +3320,80 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
                     <View style={styles.streetNameContainer}>
                       <Text style={styles.streetName}>
                         {isPOI ? (
-                          <>
-                            📍 {marker.title}
-                          </>
+                          <View style={styles.poiTitleContainer}>
+                            <IconSymbol
+                              name="location.fill"
+                              size={14}
+                              color={colors.info}
+                              style={styles.poiTitleIcon}
+                            />
+                            <Text style={styles.poiTitleText}>{marker.title}</Text>
+                          </View>
                         ) : (
                           marker.streetAddress ?
                             marker.streetAddress.split(' (')[0] : // Extract just the street name
                             `Zone ${marker.zoneNumber}`
                         )}
                       </Text>
-                      {/* Distance and Driving Time */}
+                      {/* Distance and Driving Time - Box Layout */}
                       {marker.distanceFromUser !== undefined && (
                         <View style={styles.distanceContainer}>
-                          <Text style={styles.distanceText}>
-                            📍 {formatDistance(marker.distanceFromUser)}
-                            {marker.isDistanceEstimate && ' ~'}
-                          </Text>
-                          <Text style={styles.drivingTimeText}>
-                            🚗 {formatDrivingTime(
-                              marker.drivingTimeFromUser || calculateDrivingTime(marker.distanceFromUser)
-                            )}
-                            {marker.distanceCalculationMethod === 'routing' && ' 🗺️'}
-                          </Text>
+                          <View style={styles.distanceBox}>
+                            <IconSymbol
+                              name="location.fill"
+                              size={16}
+                              color={colors.info}
+                              style={styles.distanceIcon}
+                            />
+                            <View style={styles.distanceInfo}>
+                              <Text style={styles.distanceValue}>
+                                {formatDistance(marker.distanceFromUser)}
+                                {marker.isDistanceEstimate && ' ~'}
+                              </Text>
+                              <Text style={styles.distanceLabel}>Distance</Text>
+                            </View>
+                          </View>
+                          <View style={styles.drivingTimeBox}>
+                            <IconSymbol
+                              name="car.fill"
+                              size={16}
+                              color={colors.info}
+                              style={styles.drivingTimeIcon}
+                            />
+                            <View style={styles.drivingTimeInfo}>
+                              <Text style={styles.drivingTimeValue}>
+                                {formatDrivingTime(
+                                  marker.drivingTimeFromUser || calculateDrivingTime(marker.distanceFromUser)
+                                )}
+                                {marker.distanceCalculationMethod === 'routing' && ' 🗺️'}
+                              </Text>
+                              <Text style={styles.drivingTimeLabel}>Drive Time</Text>
+                            </View>
+                          </View>
                         </View>
                       )}
+
+
                     </View>
                     <View style={styles.headerRight}>
                       <View style={styles.topRightRow}>
                         {isPOI ? (
                           <View style={[styles.statusBadge, styles.poiBadge]}>
-                            <Text style={styles.statusLabel}>
-                              {(marker as any).rating ? `⭐ ${(marker as any).rating}/5` : 'PLACE'}
-                            </Text>
+                            {(marker as any).rating ? (
+                              <View style={styles.poiRatingContainer}>
+                                <IconSymbol
+                                  name="star.fill"
+                                  size={12}
+                                  color={colors.warning}
+                                  style={styles.poiRatingIcon}
+                                />
+                                <Text style={styles.statusLabel}>
+                                  {(marker as any).rating}/5
+                                </Text>
+                              </View>
+                            ) : (
+                              <Text style={styles.statusLabel}>PLACE</Text>
+                            )}
                           </View>
                         ) : (
                           <View style={[
@@ -2659,9 +3417,6 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
                           </Text>
                         </TouchableOpacity>
                       </View>
-                      <Text style={styles.clickHint}>
-                        {selectedMarker?.id === marker.id ? '👆 Tap to deselect' : '👆 Tap to view on map'}
-                      </Text>
                     </View>
                   </View>
 
@@ -2669,11 +3424,27 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
                   <View style={styles.restrictionSection}>
                     {isPOI ? (
                       <View style={styles.poiInfoContainer}>
-                        <Text style={styles.poiAddress}>📍 {marker.streetAddress}</Text>
+                        <View style={styles.poiAddressContainer}>
+                          <IconSymbol
+                            name="location.fill"
+                            size={12}
+                            color={colors.textSecondary}
+                            style={styles.poiAddressIcon}
+                          />
+                          <Text style={styles.poiAddress}>{marker.streetAddress}</Text>
+                        </View>
                         {(marker as any).types && (marker as any).types.length > 0 && (
-                          <Text style={styles.poiTypes}>
-                            🏷️ {(marker as any).types.slice(0, 3).join(', ')}
-                          </Text>
+                          <View style={styles.poiTypesContainer}>
+                            <IconSymbol
+                              name="tag.fill"
+                              size={12}
+                              color={colors.textSecondary}
+                              style={styles.poiTypesIcon}
+                            />
+                            <Text style={styles.poiTypes}>
+                              {(marker as any).types.slice(0, 3).join(', ')}
+                            </Text>
+                          </View>
                         )}
                       </View>
                     ) : (
@@ -2704,15 +3475,72 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
                     )}
                   </View>
 
-                  {/* Additional Details - Subtle */}
-                  {marker.streetAddress && marker.streetAddress.includes('(') && (
-                    <Text style={styles.streetDetails}>
-                      {marker.streetAddress.split('(')[1]?.replace(')', '')}
-                    </Text>
+                  {/* AI Prediction Display - In details section */}
+                  {!isPOI && marker.prediction && (
+                    <View style={styles.predictionCard}>
+                      <View style={styles.predictionHeader}>
+                        <View style={styles.predictionIconContainer}>
+                          <IconSymbol
+                            name="brain"
+                            size={12}
+                            color={colors.info}
+                            style={styles.predictionIcon}
+                          />
+                        </View>
+                        <Text style={styles.predictionLabel}>Availability Forecast</Text>
+                        <View style={[
+                          styles.predictionBadge,
+                          marker.prediction.predictionCategory === 'high' && styles.predictionBadgeHigh,
+                          marker.prediction.predictionCategory === 'medium' && styles.predictionBadgeMedium,
+                          marker.prediction.predictionCategory === 'low' && styles.predictionBadgeLow
+                        ]}>
+                          <Text style={styles.predictionBadgeText}>
+                            {marker.prediction.predictionCategory?.toUpperCase()}
+                          </Text>
+                        </View>
+                      </View>
+                      <View style={styles.predictionContent}>
+                        <View style={styles.predictionMainMessage}>
+                          <Text style={styles.predictionMessage}>
+                            <Text style={styles.predictionChance}>
+                              {Math.round(marker.prediction.prob_unoccupied * 100)}%
+                            </Text>
+                            <Text style={styles.predictionAction}>
+                              {' '}chance this spot will be free when you arrive in{' '}
+                            </Text>
+                            <Text style={styles.predictionTime}>
+                              {marker.drivingTimeFromUser ? Math.round(marker.drivingTimeFromUser) : '~5'} mins
+                            </Text>
+                          </Text>
+                        </View>
+
+                      </View>
+                    </View>
                   )}
+
+                  {/* Bottom Row - Street Details and Tap Hint */}
+                  <View style={styles.bottomRow}>
+                    {marker.streetAddress && marker.streetAddress.includes('(') && (
+                      <Text style={styles.streetDetails}>
+                        {marker.streetAddress.split('(')[1]?.replace(')', '')}
+                      </Text>
+                    )}
+                    <Text style={styles.clickHint}>
+                      {selectedMarker?.id === marker.id ? '👆 Tap to deselect' : '👆 Tap to view on map'}
+                    </Text>
+                  </View>
                 </TouchableOpacity>
               );
             })}
+
+            {/* Debug: Log markers with predictions */}
+            {(() => {
+              const markersWithPredictions = filteredAndSortedMarkers.filter(m => m.prediction);
+              if (markersWithPredictions.length > 0) {
+                console.log(`🤖 Rendering ${markersWithPredictions.length} markers with predictions out of ${filteredAndSortedMarkers.length} total`);
+              }
+              return null;
+            })()}
 
             {filteredAndSortedMarkers.length === 0 && (
               <View style={styles.noAvailableSpots}>
@@ -2787,8 +3615,8 @@ export const ParkingSensorsMap: React.FC<ParkingSensorsMapProps> = ({
         visible={showNameModal}
         onClose={handleModalClose}
         onSave={handleSaveFavorite}
-        defaultName={pendingFavorite?.title || ''}
-        streetAddress={pendingFavorite?.streetAddress || ''}
+        defaultName={pendingFavorite?.title || pendingMapFavorite?.name || ''}
+        streetAddress={pendingFavorite?.streetAddress || pendingMapFavorite?.name || ''}
       />
 
 
@@ -3352,7 +4180,7 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
     backgroundColor: colors.cardBackground,
     borderRadius: 8,
     paddingHorizontal: 12,
-    paddingVertical: 12,
+    paddingVertical: 8,
     marginBottom: 6,
     marginHorizontal: 12,
     shadowColor: colors.shadow,
@@ -3380,7 +4208,7 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 16,
+    marginBottom: 10,
     minHeight: 40, // Ensure enough height for bookmark icon
   },
   streetNameContainer: {
@@ -3394,25 +4222,104 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
     lineHeight: 20,
     marginBottom: 2,
   },
-  distanceContainer: {
+  poiTitleContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
   },
-  distanceText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.info,
+  poiTitleIcon: {
+    marginRight: 4,
   },
-  walkingTimeText: {
-    fontSize: 12,
+  poiTitleText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: colors.text,
+    lineHeight: 20,
+  },
+  poiRatingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  poiRatingIcon: {
+    marginRight: 2,
+  },
+  poiTypesContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  poiTypesIcon: {
+    marginRight: 4,
+  },
+  poiAddressContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  poiAddressIcon: {
+    marginRight: 4,
+  },
+  distanceContainer: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 2,
+  },
+  distanceBox: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.backgroundSecondary,
+    borderRadius: 6,
+    padding: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  distanceIcon: {
+    marginRight: 6,
+  },
+  distanceInfo: {
+    flex: 1,
+  },
+  distanceValue: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.text,
+    lineHeight: 16,
+  },
+  distanceLabel: {
+    fontSize: 10,
     fontWeight: '500',
     color: colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
-  drivingTimeText: {
-    fontSize: 12,
+  drivingTimeBox: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.backgroundSecondary,
+    borderRadius: 6,
+    padding: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  drivingTimeIcon: {
+    marginRight: 6,
+  },
+  drivingTimeInfo: {
+    flex: 1,
+  },
+  drivingTimeValue: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.text,
+    lineHeight: 16,
+  },
+  drivingTimeLabel: {
+    fontSize: 10,
     fontWeight: '500',
     color: colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   headerRight: {
     alignItems: 'flex-end',
@@ -3482,9 +4389,11 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
     fontSize: 9,
     color: colors.textSecondary,
     fontStyle: 'italic',
+    textAlign: 'right',
+    marginLeft: 8,
   },
   restrictionSection: {
-    marginBottom: 12,
+    marginBottom: 4,
   },
   signInfoContainer: {
     backgroundColor: colors.backgroundSecondary,
@@ -3590,14 +4499,20 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
     borderLeftWidth: 4,
     borderLeftColor: colors.info,
   },
-  streetDetails: {
-    fontSize: 11,
-    color: colors.textSecondary,
-    fontStyle: 'italic',
+  bottomRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginTop: 4,
     paddingTop: 6,
     borderTopWidth: 1,
     borderTopColor: colors.border,
+  },
+  streetDetails: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    fontStyle: 'italic',
+    flex: 1,
   },
   noAvailableSpots: {
     alignItems: 'center',
@@ -3849,5 +4764,95 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
   toSpeechButtonActive: {
     backgroundColor: colors.buttonPrimary,
     borderColor: colors.buttonPrimary,
+  },
+
+  // AI Prediction Styles - Card-like design
+  predictionCard: {
+    backgroundColor: colors.backgroundSecondary,
+    borderRadius: 8,
+    padding: 10,
+    marginTop: 4,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  predictionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  predictionIconContainer: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  predictionIcon: {
+    // Icon styling handled by IconSymbol component
+  },
+  predictionLabel: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    fontWeight: '500',
+    flex: 1,
+  },
+  predictionBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    backgroundColor: colors.border,
+  },
+  predictionBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  predictionContent: {
+    flexDirection: 'column',
+    gap: 4,
+  },
+  predictionMainMessage: {
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+  },
+  predictionMessage: {
+    fontSize: 16,
+    color: colors.text,
+    fontWeight: '500',
+    lineHeight: 22,
+    flexWrap: 'wrap',
+  },
+  predictionChance: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: colors.success,
+  },
+  predictionAction: {
+    fontSize: 16,
+    color: colors.text,
+    fontWeight: '500',
+  },
+  predictionTime: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: colors.info,
+  },
+
+  predictionBadgeHigh: {
+    backgroundColor: '#E8F5E8',
+    borderColor: '#4CAF50',
+    borderWidth: 1,
+  },
+  predictionBadgeMedium: {
+    backgroundColor: '#FFF3E0',
+    borderColor: '#FF9800',
+    borderWidth: 1,
+  },
+  predictionBadgeLow: {
+    backgroundColor: '#FFEBEE',
+    borderColor: '#F44336',
+    borderWidth: 1,
   },
 });

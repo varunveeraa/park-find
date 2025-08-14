@@ -72,6 +72,17 @@ export interface ParkingZoneStreetSegmentsApiResponse {
   results: ParkingZoneStreetSegment[];
 }
 
+// Parking prediction types
+export interface ParkingPrediction {
+  zone_number: number;
+  now_time: string;
+  arrival_minute_of_day: number;
+  prob_unoccupied: number;
+  predictionCategory?: 'high' | 'medium' | 'low';
+  predictionDescription?: string;
+  lastPredictionUpdate?: Date;
+}
+
 // Enhanced marker with restriction and street info
 export interface EnhancedParkingSensorMarker extends ParkingSensorMarker {
   restrictions?: ParkingZoneSignPlate[];
@@ -84,6 +95,7 @@ export interface EnhancedParkingSensorMarker extends ParkingSensorMarker {
   walkingTimeFromUser?: number; // Walking time in minutes (kept for backward compatibility)
   distanceCalculationMethod?: 'straight-line' | 'routing' | 'hybrid';
   isDistanceEstimate?: boolean;
+  prediction?: ParkingPrediction; // AI prediction data
 }
 
 // Error types

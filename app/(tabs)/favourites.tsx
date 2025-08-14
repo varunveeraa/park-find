@@ -47,7 +47,12 @@ export default function SavedScreen() {
   const loadSaved = async () => {
     try {
       const favorites = await favoritesService.getAllFavorites();
-      setSavedSpots(favorites);
+
+      // Enhance favorites with AI predictions
+      console.log('Enhancing favorite spots with AI predictions...');
+      const enhancedFavorites = await favoritesService.enhanceFavoritesWithPredictions(favorites);
+
+      setSavedSpots(enhancedFavorites);
     } catch (error) {
       console.error('Error loading saved spots:', error);
     } finally {
@@ -180,6 +185,26 @@ export default function SavedScreen() {
             <Text style={styles.restrictionText} numberOfLines={2}>
               {item.restriction.replace(/Location:.*?\n/g, '').replace(/Status:.*?\n/g, '').replace(/Last updated:.*$/g, '').trim()}
             </Text>
+
+            {/* AI Prediction Display - Cleaner design */}
+            {item.prediction && (
+              <View style={styles.predictionRow}>
+                <View style={styles.predictionIcon}>
+                  <Text style={styles.predictionIconText}>🤖</Text>
+                </View>
+                <View style={styles.predictionContent}>
+                  <Text style={styles.predictionText}>
+                    {Math.round(item.prediction.prob_unoccupied * 100)}% likely available when you arrive
+                  </Text>
+                </View>
+                <View style={[
+                  styles.predictionIndicator,
+                  item.prediction.predictionCategory === 'high' && styles.predictionIndicatorHigh,
+                  item.prediction.predictionCategory === 'medium' && styles.predictionIndicatorMedium,
+                  item.prediction.predictionCategory === 'low' && styles.predictionIndicatorLow
+                ]} />
+              </View>
+            )}
           </View>
         </View>
 
@@ -566,5 +591,57 @@ const createStyles = (colors: typeof Colors.light) => StyleSheet.create({
     textAlign: 'center',
     fontStyle: 'italic',
     opacity: 0.8,
+  },
+
+  // AI Prediction Styles - Cleaner, more integrated design
+  predictionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+    paddingHorizontal: 2,
+    opacity: 0.85,
+  },
+  predictionIcon: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: colors.backgroundSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 6,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  predictionIconText: {
+    fontSize: 7,
+  },
+  predictionContent: {
+    flex: 1,
+  },
+  predictionText: {
+    fontSize: 10,
+    color: colors.textSecondary,
+    fontWeight: '500',
+    fontStyle: 'italic',
+  },
+  predictionIndicator: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    marginLeft: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 1,
+    elevation: 1,
+  },
+  predictionIndicatorHigh: {
+    backgroundColor: '#4CAF50',
+  },
+  predictionIndicatorMedium: {
+    backgroundColor: '#FF9800',
+  },
+  predictionIndicatorLow: {
+    backgroundColor: '#F44336',
   },
 });

@@ -4,7 +4,8 @@
  */
 
 import { Platform } from 'react-native';
-import { EnhancedParkingSensorMarker } from '../../types';
+import { EnhancedParkingSensorMarker, ParkingPrediction } from '../../types';
+import { parkingPredictionApi } from '../api/parkingPredictionApi';
 import { webDatabaseService } from './webDatabaseService';
 
 export interface FavoriteSpot {
@@ -20,6 +21,7 @@ export interface FavoriteSpot {
   customName?: string;
   dateAdded: string;
   lastUpdated: string;
+  prediction?: ParkingPrediction; // AI prediction data
 }
 
 export interface FavoriteSpotInput {
@@ -258,6 +260,56 @@ class FavoritesService {
       console.error('Error migrating from AsyncStorage:', error);
       throw error;
     }
+  }
+
+  /**
+   * Enhance favorite spots with AI predictions
+   */
+  async enhanceFavoritesWithPredictions(favorites: FavoriteSpot[]): Promise<FavoriteSpot[]> {
+    if (favorites.length === 0) {
+      return favorites;
+    }
+
+    console.log(`Enhancing ${favorites.length} favorite spots with predictions...`);
+
+    const enhancedFavorites = await Promise.all(
+      favorites.map(async (favorite) => {
+        // Only enhance if we have a zone number
+        if (!favorite.zoneNumber) {
+          return favorite;
+        }
+
+        try {
+          const zoneNumber = parseInt(favorite.zoneNumber);
+          if (isNaN(zoneNumber)) {
+            return favorite;
+          }
+
+          const predictionResponse = await parkingPredictionApi.predictParkingAvailability(zoneNumber);
+
+          const prediction: ParkingPrediction = {
+            zone_number: predictionResponse.zone_number,
+            now_time: predictionResponse.now_time,
+            arrival_minute_of_day: predictionResponse.arrival_minute_of_day,
+            prob_unoccupied: predictionResponse.prob_unoccupied,
+            predictionCategory: parkingPredictionApi.getProbabilityCategory(predictionResponse.prob_unoccupied),
+            predictionDescription: parkingPredictionApi.getProbabilityDescription(predictionResponse.prob_unoccupied),
+            lastPredictionUpdate: new Date()
+          };
+
+          return {
+            ...favorite,
+            prediction
+          };
+        } catch (error) {
+          console.warn(`Failed to get prediction for favorite spot ${favorite.id}:`, error);
+          return favorite;
+        }
+      })
+    );
+
+    console.log(`Enhanced ${enhancedFavorites.filter(f => f.prediction).length} favorites with predictions`);
+    return enhancedFavorites;
   }
 }
 

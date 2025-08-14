@@ -26,6 +26,11 @@ const MAPPING = {
   'sun.max': 'wb-sunny',
   'moon': 'brightness-2',
   'gear': 'settings',
+  'location.fill': 'location-on',
+  'car.fill': 'directions-car',
+  'brain': 'psychology',
+  'star.fill': 'star',
+  'tag.fill': 'local-offer',
 } as IconMapping;
 
 /**
